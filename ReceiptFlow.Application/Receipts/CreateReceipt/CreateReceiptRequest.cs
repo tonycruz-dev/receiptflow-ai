@@ -1,10 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿
+namespace ReceiptFlow.Application.Receipts.CreateReceipt;
 
-namespace ReceiptFlow.Application.Receipts.CreateReceipt
-{
-	internal class CreateReceiptRequest
-	{
-	}
-}
+public sealed record CreateReceiptRequest(
+	string MerchantName,
+	DateTimeOffset PurchaseDate,
+	decimal TotalAmount,
+	string Currency = "GBP",
+	string Category = "Other",
+	decimal? SubtotalAmount = null,
+	decimal? TaxAmount = null);
