@@ -6,4 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ReceiptFlow.Application\ReceiptFlow.Application.csproj" />
+    <ProjectReference Include="..\ReceiptFlow.Domain\ReceiptFlow.Domain.csproj" />
+  </ItemGroup>
+
 </Project>

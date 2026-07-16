@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ReceiptFlow.AI.ServiceDefaults\ReceiptFlow.AI.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\ReceiptFlow.Application\ReceiptFlow.Application.csproj" />
+    <ProjectReference Include="..\ReceiptFlow.Infrastructure\ReceiptFlow.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
