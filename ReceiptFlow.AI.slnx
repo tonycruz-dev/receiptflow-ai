@@ -1,4 +1,8 @@
 <Solution>
   <Project Path="ReceiptFlow.AI.AppHost/ReceiptFlow.AI.AppHost.csproj" />
   <Project Path="ReceiptFlow.AI.ServiceDefaults/ReceiptFlow.AI.ServiceDefaults.csproj" />
+  <Project Path="ReceiptFlow.Api/ReceiptFlow.Api.csproj" />
+  <Project Path="ReceiptFlow.Application/ReceiptFlow.Application.csproj" />
+  <Project Path="ReceiptFlow.Domain/ReceiptFlow.Domain.csproj" />
+  <Project Path="ReceiptFlow.Infrastructure/ReceiptFlow.Infrastructure.csproj" />
 </Solution>

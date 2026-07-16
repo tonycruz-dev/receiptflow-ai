@@ -13,4 +13,8 @@
     <PackageReference Include="Aspire.Hosting.Keycloak" Version="13.4.6-preview.1.26319.6" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ReceiptFlow.Api\ReceiptFlow.Api.csproj" />
+  </ItemGroup>
+
 </Project>
