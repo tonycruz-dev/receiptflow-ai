@@ -112,6 +112,8 @@ internal sealed class ReceiptFlowApiFactory
 
 	protected override void ConfigureWebHost(IWebHostBuilder builder)
 	{
+		builder.UseEnvironment("Test");
+
 		builder.ConfigureAppConfiguration(configuration =>
 		{
 			configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -120,6 +122,7 @@ internal sealed class ReceiptFlowApiFactory
 				["Keycloak:Authority"] = "https://localhost:6001/realms/receipt",
 				["Keycloak:Audience"] = "receiptflow-api",
 				["Keycloak:RequireHttpsMetadata"] = "false",
+				["DocumentStorage:Provider"] = "Local",
 				["DocumentStorage:RootPath"] = StorageRoot
 			});
 		});

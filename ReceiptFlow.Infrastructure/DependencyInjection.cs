@@ -1,7 +1,10 @@
+using Azure.Identity;
+using Azure.Storage.Blobs;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Persistence;
 using ReceiptFlow.Application.Abstractions.Storage;
@@ -34,16 +37,112 @@ public static class DependencyInjection
 			MassTransitReceiptDocumentEventPublisher>();
 
 		services
-			.AddOptions<LocalDocumentStorageOptions>()
-			.Bind(configuration.GetSection(
-				LocalDocumentStorageOptions.SectionName));
+			.AddOptions<DocumentStorageOptions>()
+			.Bind(configuration.GetSection(DocumentStorageOptions.SectionName))
+			.Validate(ValidateDocumentStorageOptions)
+			.ValidateOnStart();
 
-		services.AddScoped<IDocumentStorage, LocalDocumentStorage>();
+		AddDocumentStorage(services, configuration);
 
 		services.AddScoped<IUnitOfWork>(serviceProvider =>
 			serviceProvider.GetRequiredService<ApplicationDbContext>());
 
 		return services;
+	}
+
+	private static void AddDocumentStorage(
+		IServiceCollection services,
+		IConfiguration configuration)
+	{
+		var options = configuration
+			.GetSection(DocumentStorageOptions.SectionName)
+			.Get<DocumentStorageOptions>()
+			?? new DocumentStorageOptions();
+
+		if (string.Equals(
+			options.Provider,
+			DocumentStorageProviders.AzureBlob,
+			StringComparison.OrdinalIgnoreCase))
+		{
+			services.AddSingleton(_ =>
+				CreateBlobServiceClient(configuration, options));
+			services.AddSingleton(serviceProvider =>
+				serviceProvider
+					.GetRequiredService<BlobServiceClient>()
+					.GetBlobContainerClient(options.ContainerName));
+			services.AddSingleton<IDocumentStorage, AzureBlobDocumentStorage>();
+
+			return;
+		}
+
+		services.AddSingleton<IDocumentStorage, LocalDocumentStorage>();
+	}
+
+	private static BlobServiceClient CreateBlobServiceClient(
+		IConfiguration configuration,
+		DocumentStorageOptions options)
+	{
+		var connection = configuration.GetConnectionString(
+			options.BlobConnectionName);
+
+		if (!string.IsNullOrWhiteSpace(connection))
+		{
+			if (Uri.TryCreate(
+				connection,
+				UriKind.Absolute,
+				out var connectionUri))
+			{
+				return new BlobServiceClient(
+					connectionUri,
+					new DefaultAzureCredential(),
+					CreateBlobClientOptions());
+			}
+
+			return new BlobServiceClient(
+				connection,
+				CreateBlobClientOptions());
+		}
+
+		if (!string.IsNullOrWhiteSpace(options.BlobServiceUri))
+		{
+			return new BlobServiceClient(
+				new Uri(options.BlobServiceUri),
+				new DefaultAzureCredential(),
+				CreateBlobClientOptions());
+		}
+
+		throw new InvalidOperationException(
+			$"Connection string '{options.BlobConnectionName}' was not found.");
+	}
+
+	private static BlobClientOptions CreateBlobClientOptions() =>
+		new(BlobClientOptions.ServiceVersion.V2021_12_02);
+
+	private static bool ValidateDocumentStorageOptions(
+		DocumentStorageOptions options)
+	{
+		if (!string.Equals(
+				options.Provider,
+				DocumentStorageProviders.Local,
+				StringComparison.OrdinalIgnoreCase) &&
+			!string.Equals(
+				options.Provider,
+				DocumentStorageProviders.AzureBlob,
+				StringComparison.OrdinalIgnoreCase))
+		{
+			return false;
+		}
+
+		if (string.Equals(
+				options.Provider,
+				DocumentStorageProviders.AzureBlob,
+				StringComparison.OrdinalIgnoreCase) &&
+			string.IsNullOrWhiteSpace(options.ContainerName))
+		{
+			return false;
+		}
+
+		return true;
 	}
 
 	public static IServiceCollection AddDocumentExtraction(

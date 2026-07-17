@@ -5,7 +5,7 @@ using ReceiptFlow.Application.Abstractions.Storage;
 namespace ReceiptFlow.Infrastructure.Storage;
 
 internal sealed class LocalDocumentStorage(
-	IOptions<LocalDocumentStorageOptions> options)
+	IOptions<DocumentStorageOptions> options)
 	: IDocumentStorage
 {
 	private const string PlaceholderRoot = "__SET_DOCUMENT_STORAGE_ROOT__";
