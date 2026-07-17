@@ -6,6 +6,7 @@ using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Persistence;
 using ReceiptFlow.Application.Abstractions.Storage;
 using ReceiptFlow.Contracts;
+using ReceiptFlow.Infrastructure.Extraction;
 using ReceiptFlow.Infrastructure.Messaging;
 using ReceiptFlow.Infrastructure.Persistence;
 using ReceiptFlow.Infrastructure.Persistence.Repositories;
@@ -41,6 +42,22 @@ public static class DependencyInjection
 
 		services.AddScoped<IUnitOfWork>(serviceProvider =>
 			serviceProvider.GetRequiredService<ApplicationDbContext>());
+
+		return services;
+	}
+
+	public static IServiceCollection AddDocumentExtraction(
+		this IServiceCollection services,
+		IConfiguration configuration)
+	{
+		services
+			.AddOptions<DocumentIntelligenceOptions>()
+			.Bind(configuration.GetSection(
+				DocumentIntelligenceOptions.SectionName));
+
+		services.AddScoped<
+			Application.Abstractions.Extraction.IDocumentExtractor,
+			AzureDocumentIntelligenceExtractor>();
 
 		return services;
 	}

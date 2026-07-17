@@ -96,6 +96,8 @@ public sealed class Document
 	public Receipt? Receipt { get; private set; }
 	public Guid? ReceiptId { get; private set; }
 
+	public DocumentExtraction? Extraction { get; private set; }
+
 	public void MarkQueued()
 	{
 		EnsureStatus(DocumentProcessingStatus.Pending);
@@ -115,6 +117,13 @@ public sealed class Document
 		ProcessingStatus = DocumentProcessingStatus.Processing;
 		ProcessingStartedAtUtc = DateTimeOffset.UtcNow;
 		FailureReason = null;
+	}
+
+	public void MarkPendingForRetry()
+	{
+		EnsureStatus(DocumentProcessingStatus.Processing);
+		ProcessingStatus = DocumentProcessingStatus.Pending;
+		ProcessingStartedAtUtc = null;
 	}
 
 	public void MarkAwaitingReview(

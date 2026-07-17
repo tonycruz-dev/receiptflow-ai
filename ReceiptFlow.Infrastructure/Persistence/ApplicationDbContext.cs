@@ -13,6 +13,9 @@ public sealed class ApplicationDbContext(
 
 	public DbSet<Document> Documents => Set<Document>();
 
+	public DbSet<DocumentExtraction> DocumentExtractions =>
+		Set<DocumentExtraction>();
+
 	public DbSet<ReceiptLineItem> ReceiptLineItems =>
 		Set<ReceiptLineItem>();
 

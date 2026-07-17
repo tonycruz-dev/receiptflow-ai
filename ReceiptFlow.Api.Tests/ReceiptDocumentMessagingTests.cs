@@ -3,6 +3,7 @@ extern alias DocumentWorker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using ReceiptFlow.Application.Abstractions.Authentication;
+using ReceiptFlow.Application.Abstractions.Extraction;
 using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Persistence;
 using ReceiptFlow.Application.Abstractions.Storage;
@@ -80,6 +81,8 @@ public sealed class ReceiptDocumentMessagingTests
 		var document = AddDocument(dbContext);
 		var consumer = new ReceiptDocumentUploadedConsumer(
 			dbContext,
+			new FakeDocumentStorage(),
+			new FakeDocumentExtractor(),
 			NullLogger<ReceiptDocumentUploadedConsumer>.Instance);
 
 		await consumer.HandleAsync(CreateMessage(document));
@@ -92,6 +95,8 @@ public sealed class ReceiptDocumentMessagingTests
 		var document = AddDocument(dbContext);
 		var consumer = new ReceiptDocumentUploadedConsumer(
 			dbContext,
+			new FakeDocumentStorage(),
+			new FakeDocumentExtractor(),
 			NullLogger<ReceiptDocumentUploadedConsumer>.Instance);
 		var message = CreateMessage(document);
 
@@ -108,6 +113,8 @@ public sealed class ReceiptDocumentMessagingTests
 		await using var dbContext = CreateDbContext();
 		var consumer = new ReceiptDocumentUploadedConsumer(
 			dbContext,
+			new FakeDocumentStorage(),
+			new FakeDocumentExtractor(),
 			NullLogger<ReceiptDocumentUploadedConsumer>.Instance);
 
 		await consumer.HandleAsync(
@@ -227,6 +234,45 @@ public sealed class ReceiptDocumentMessagingTests
 			string storageKey,
 			CancellationToken cancellationToken) =>
 			Task.CompletedTask;
+
+		public Task<Stream> OpenReadAsync(
+			string storageKey,
+			CancellationToken cancellationToken) =>
+			Task.FromResult<Stream>(
+				new MemoryStream([0xFF, 0xD8, 0xFF]));
+	}
+
+	private sealed class FakeDocumentExtractor : IDocumentExtractor
+	{
+		public Task<DocumentExtractionResult> ExtractAsync(
+			Stream content,
+			string contentType,
+			CancellationToken cancellationToken)
+		{
+			return Task.FromResult(
+				new DocumentExtractionResult(
+					"raw text",
+					new ExtractedReceiptFields(
+						"Corner Shop",
+						DateTimeOffset.UtcNow.AddDays(-1),
+						10,
+						2,
+						12,
+						"GBP"),
+					[
+						new ExtractedReceiptLineItem(
+							"Milk",
+							1,
+							2,
+							2,
+							null,
+							0.95m)
+					],
+					0.98m,
+					"Fake",
+					"prebuilt-receipt",
+					"{\"source\":\"test\"}"));
+		}
 	}
 
 	private sealed class FakeReceiptDocumentEventPublisher

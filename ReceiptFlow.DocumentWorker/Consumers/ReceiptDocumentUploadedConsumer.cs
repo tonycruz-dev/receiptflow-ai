@@ -1,15 +1,23 @@
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using ReceiptFlow.Application.Abstractions.Extraction;
+using ReceiptFlow.Application.Abstractions.Storage;
 using ReceiptFlow.Contracts;
+using ReceiptFlow.Domain.Entities;
+using ReceiptFlow.Domain.Enums;
 using ReceiptFlow.Infrastructure.Persistence;
 
 namespace ReceiptFlow.DocumentWorker.Consumers;
 
 public sealed class ReceiptDocumentUploadedConsumer(
 	ApplicationDbContext dbContext,
+	IDocumentStorage documentStorage,
+	IDocumentExtractor documentExtractor,
 	ILogger<ReceiptDocumentUploadedConsumer> logger)
 	: IConsumer<ReceiptDocumentUploaded>
 {
+	private const decimal MinimumLineItemConfidence = 0.8m;
+
 	public async Task Consume(
 		ConsumeContext<ReceiptDocumentUploaded> context)
 	{
@@ -23,7 +31,9 @@ public sealed class ReceiptDocumentUploadedConsumer(
 		CancellationToken cancellationToken = default)
 	{
 		var document = await dbContext.Documents
-			.AsNoTracking()
+			.Include(document => document.Extraction)
+			.Include(document => document.Receipt!)
+				.ThenInclude(receipt => receipt.LineItems)
 			.SingleOrDefaultAsync(
 				document => document.Id == message.DocumentId,
 				cancellationToken);
@@ -38,13 +48,114 @@ public sealed class ReceiptDocumentUploadedConsumer(
 			return;
 		}
 
-		logger.LogInformation(
-			"Receipt document upload event {EventId} received for document {DocumentId}, receipt {ReceiptId}, owner {OwnerUserId}, content type {ContentType}, status {ProcessingStatus}.",
-			message.EventId,
-			document.Id,
-			document.ReceiptId,
-			document.OwnerUserId,
-			document.ContentType,
+		if (document.ProcessingStatus is
+			DocumentProcessingStatus.Completed or
+			DocumentProcessingStatus.Failed ||
+			document.Extraction is not null)
+		{
+			logger.LogInformation(
+				"Receipt document upload event {EventId} ignored for document {DocumentId} with status {ProcessingStatus}.",
+				message.EventId,
+				document.Id,
 				document.ProcessingStatus);
+
+			return;
+		}
+
+		if (document.ProcessingStatus is
+			DocumentProcessingStatus.Pending or
+			DocumentProcessingStatus.Queued)
+		{
+			document.MarkProcessing();
+			await dbContext.SaveChangesAsync(cancellationToken);
+		}
+
+		try
+		{
+			await using var content = await documentStorage.OpenReadAsync(
+				document.StorageKey,
+				cancellationToken);
+			var result = await documentExtractor.ExtractAsync(
+				content,
+				document.ContentType,
+				cancellationToken);
+
+			PersistExtraction(document, result);
+			document.MarkCompleted();
+
+			await dbContext.SaveChangesAsync(cancellationToken);
+
+			logger.LogInformation(
+				"Receipt document extraction completed for document {DocumentId} using provider {Provider} and model {ModelId}.",
+				document.Id,
+				result.Provider,
+				result.ModelId);
+		}
+		catch (DocumentExtractionException exception)
+			when (exception.IsTransient)
+		{
+			document.MarkPendingForRetry();
+			await dbContext.SaveChangesAsync(CancellationToken.None);
+			throw;
+		}
+		catch (Exception exception)
+		{
+			var summary = exception is DocumentExtractionException
+				? exception.Message
+				: "Document extraction failed.";
+
+			document.MarkFailed(summary);
+			await dbContext.SaveChangesAsync(CancellationToken.None);
+
+			logger.LogWarning(
+				"Receipt document extraction failed for document {DocumentId}: {FailureReason}",
+				document.Id,
+				summary);
+		}
+	}
+
+	private void PersistExtraction(
+		Document document,
+		DocumentExtractionResult result)
+	{
+		if (document.Extraction is not null)
+			return;
+
+		dbContext.DocumentExtractions.Add(
+			new DocumentExtraction(
+				document.Id,
+				result.RawText,
+				result.Fields.MerchantName,
+				result.Fields.TransactionDate,
+				result.Fields.Subtotal,
+				result.Fields.Tax,
+				result.Fields.Total,
+				result.Fields.Currency,
+				result.OverallConfidence,
+				result.Provider,
+				result.ModelId,
+				result.StructuredDataJson));
+
+		if (document.Receipt is null ||
+			document.Receipt.LineItems.Count != 0)
+		{
+			return;
+		}
+
+		foreach (var item in result.LineItems)
+		{
+			if (item.Confidence < MinimumLineItemConfidence ||
+				string.IsNullOrWhiteSpace(item.Description))
+			{
+				continue;
+			}
+
+			document.Receipt.AddLineItem(
+				item.Description,
+				item.Quantity,
+				item.UnitPrice,
+				item.LineTotal,
+				item.Tax);
+		}
 	}
 }

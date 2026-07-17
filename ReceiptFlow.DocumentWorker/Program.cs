@@ -7,6 +7,8 @@ builder.AddServiceDefaults();
 
 builder.Services.AddInfrastructure(
 	builder.Configuration);
+builder.Services.AddDocumentExtraction(
+	builder.Configuration);
 builder.Services.AddReceiptFlowMessaging(
 	builder.Configuration,
 	messaging => messaging.AddConsumer<ReceiptDocumentUploadedConsumer>());

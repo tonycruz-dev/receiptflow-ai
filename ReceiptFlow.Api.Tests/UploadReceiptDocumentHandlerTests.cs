@@ -104,6 +104,11 @@ public sealed class UploadReceiptDocumentHandlerTests
 			DeletedStorageKey = storageKey;
 			return Task.CompletedTask;
 		}
+
+		public Task<Stream> OpenReadAsync(
+			string storageKey,
+			CancellationToken cancellationToken) =>
+			Task.FromResult<Stream>(new MemoryStream());
 	}
 
 	private sealed class FakeReceiptDocumentEventPublisher

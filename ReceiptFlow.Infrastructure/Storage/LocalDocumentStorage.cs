@@ -85,6 +85,22 @@ internal sealed class LocalDocumentStorage(
 		return Task.CompletedTask;
 	}
 
+	public Task<Stream> OpenReadAsync(
+		string storageKey,
+		CancellationToken cancellationToken)
+	{
+		var fullPath = GetFullPath(rootPath, storageKey);
+		Stream stream = new FileStream(
+			fullPath,
+			FileMode.Open,
+			FileAccess.Read,
+			FileShare.Read,
+			bufferSize: 81920,
+			FileOptions.Asynchronous | FileOptions.SequentialScan);
+
+		return Task.FromResult(stream);
+	}
+
 	private static string CreateStorageKey(string extension)
 	{
 		var now = DateTimeOffset.UtcNow;
