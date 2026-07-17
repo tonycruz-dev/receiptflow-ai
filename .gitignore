@@ -489,3 +489,6 @@ appsettings.*.Local.json
 
 # Local Aspire state
 .aspire/
+
+# Local receipt document storage
+.receiptflow-storage/

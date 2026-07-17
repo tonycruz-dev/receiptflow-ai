@@ -6,6 +6,7 @@ using ReceiptFlow.Api.Options;
 using ReceiptFlow.Application.Abstractions.Authentication;
 using ReceiptFlow.Application.Receipts.CreateReceipt;
 using ReceiptFlow.Application.Receipts.GetReceipt;
+using ReceiptFlow.Application.Receipts.UploadDocument;
 using ReceiptFlow.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -68,6 +69,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 builder.Services.AddScoped<CreateReceiptHandler>();
 builder.Services.AddScoped<GetReceiptHandler>();
+builder.Services.AddScoped<UploadReceiptDocumentHandler>();
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi

@@ -35,6 +35,20 @@ internal sealed class ReceiptRepository(
 				cancellationToken);
 	}
 
+	public Task<Receipt?> GetByIdForUpdateAsync(
+		Guid id,
+		string ownerUserId,
+		CancellationToken cancellationToken = default)
+	{
+		return dbContext.Receipts
+			.Include(receipt => receipt.Documents)
+			.SingleOrDefaultAsync(
+				receipt =>
+					receipt.Id == id &&
+					receipt.OwnerUserId == ownerUserId,
+				cancellationToken);
+	}
+
 	public async Task<IReadOnlyList<Receipt>> GetAllAsync(
 		string ownerUserId,
 		CancellationToken cancellationToken = default)

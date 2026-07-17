@@ -96,6 +96,10 @@ internal sealed class ReceiptFlowApiFactory
 	: WebApplicationFactory<Program>
 {
 	private readonly string databaseName = Guid.NewGuid().ToString();
+	public string StorageRoot { get; } = Path.Combine(
+		Path.GetTempPath(),
+		"ReceiptFlow.Api.Tests",
+		Guid.NewGuid().ToString("N"));
 
 	public HttpClient CreateAuthenticatedClient(string user)
 	{
@@ -115,7 +119,8 @@ internal sealed class ReceiptFlowApiFactory
 				["ConnectionStrings:receiptflow"] = "Host=localhost;Database=receiptflow_tests",
 				["Keycloak:Authority"] = "https://localhost:6001/realms/receipt",
 				["Keycloak:Audience"] = "receiptflow-api",
-				["Keycloak:RequireHttpsMetadata"] = "false"
+				["Keycloak:RequireHttpsMetadata"] = "false",
+				["DocumentStorage:RootPath"] = StorageRoot
 			});
 		});
 

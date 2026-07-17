@@ -14,6 +14,11 @@ public interface IReceiptRepository
 		string ownerUserId,
 		CancellationToken cancellationToken = default);
 
+	Task<Receipt?> GetByIdForUpdateAsync(
+		Guid id,
+		string ownerUserId,
+		CancellationToken cancellationToken = default);
+
 	Task<IReadOnlyList<Receipt>> GetAllAsync(
 		string ownerUserId,
 		CancellationToken cancellationToken = default);
