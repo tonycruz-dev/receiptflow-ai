@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ReceiptFlow.Application.Receipts.CreateReceipt;
+using ReceiptFlow.Application.Receipts.Documents;
 using ReceiptFlow.Application.Receipts.GetReceipt;
 using ReceiptFlow.Application.Receipts.UploadDocument;
 
@@ -12,7 +13,9 @@ namespace ReceiptFlow.Api.Controllers;
 public sealed class ReceiptsController(
 	CreateReceiptHandler createReceiptHandler,
 	GetReceiptHandler getReceiptHandler,
-	UploadReceiptDocumentHandler uploadReceiptDocumentHandler)
+	UploadReceiptDocumentHandler uploadReceiptDocumentHandler,
+	ListReceiptDocumentsHandler listReceiptDocumentsHandler,
+	GetReceiptDocumentHandler getReceiptDocumentHandler)
 	: ControllerBase
 {
 	[HttpPost]
@@ -93,6 +96,36 @@ public sealed class ReceiptsController(
 				}),
 			_ => InvalidFile()
 		};
+	}
+
+	[HttpGet("{receiptId:guid}/documents")]
+	public async Task<IActionResult> ListDocuments(
+		Guid receiptId,
+		CancellationToken cancellationToken)
+	{
+		var documents = await listReceiptDocumentsHandler.HandleAsync(
+			receiptId,
+			cancellationToken);
+
+		return documents is null
+			? NotFound()
+			: Ok(documents);
+	}
+
+	[HttpGet("{receiptId:guid}/documents/{documentId:guid}")]
+	public async Task<IActionResult> GetDocument(
+		Guid receiptId,
+		Guid documentId,
+		CancellationToken cancellationToken)
+	{
+		var document = await getReceiptDocumentHandler.HandleAsync(
+			receiptId,
+			documentId,
+			cancellationToken);
+
+		return document is null
+			? NotFound()
+			: Ok(document);
 	}
 
 	private BadRequestObjectResult InvalidFile()

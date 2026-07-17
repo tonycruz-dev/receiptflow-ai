@@ -32,6 +32,7 @@ public static class DependencyInjection
 			options.UseNpgsql(connectionString));
 
 		services.AddScoped<IReceiptRepository, ReceiptRepository>();
+		services.AddScoped<IReceiptDocumentReadStore, ReceiptDocumentReadStore>();
 		services.AddScoped<
 			IReceiptDocumentEventPublisher,
 			MassTransitReceiptDocumentEventPublisher>();
