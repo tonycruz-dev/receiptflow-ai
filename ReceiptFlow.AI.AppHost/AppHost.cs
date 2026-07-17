@@ -8,14 +8,26 @@ var postgres = builder
 var receiptFlowDatabase = postgres
 	.AddDatabase("receiptflow");
 
+var messaging = builder.AddRabbitMQ("messaging")
+	.WithDataVolume("rabbitmq-receipt-data");
+
 var keycloak = builder.AddKeycloak("Keycloak", 6001)
 	.WithDataVolume("keycloak-receipt-data")
 	.WithRealmImport("./Realms");
 
 builder.AddProject<Projects.ReceiptFlow_Api>("receiptflow-api")
 	.WithReference(receiptFlowDatabase)
+	.WithReference(messaging)
 	.WithReference(keycloak)
 	.WaitFor(receiptFlowDatabase)
+	.WaitFor(messaging)
 	.WaitFor(keycloak);
+
+builder.AddProject<Projects.ReceiptFlow_DocumentWorker>(
+	"receiptflow-documentworker")
+	.WithReference(receiptFlowDatabase)
+	.WithReference(messaging)
+	.WaitFor(receiptFlowDatabase)
+	.WaitFor(messaging);
 
 builder.Build().Run();

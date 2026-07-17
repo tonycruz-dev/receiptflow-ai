@@ -1,7 +1,9 @@
 using ReceiptFlow.Application.Abstractions.Authentication;
+using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Persistence;
 using ReceiptFlow.Application.Abstractions.Storage;
 using ReceiptFlow.Application.Receipts.UploadDocument;
+using ReceiptFlow.Contracts;
 using ReceiptFlow.Domain.Entities;
 
 namespace ReceiptFlow.Api.Tests;
@@ -21,7 +23,8 @@ public sealed class UploadReceiptDocumentHandlerTests
 					DateTimeOffset.UtcNow.AddDays(-1),
 					12.50m)),
 			new FailingUnitOfWork(),
-			storage);
+			storage,
+			new FakeReceiptDocumentEventPublisher());
 
 		await Assert.ThrowsAsync<InvalidOperationException>(() =>
 			handler.HandleAsync(
@@ -99,6 +102,20 @@ public sealed class UploadReceiptDocumentHandlerTests
 			CancellationToken cancellationToken)
 		{
 			DeletedStorageKey = storageKey;
+			return Task.CompletedTask;
+		}
+	}
+
+	private sealed class FakeReceiptDocumentEventPublisher
+		: IReceiptDocumentEventPublisher
+	{
+		public List<ReceiptDocumentUploaded> Messages { get; } = [];
+
+		public Task PublishAsync(
+			ReceiptDocumentUploaded message,
+			CancellationToken cancellationToken)
+		{
+			Messages.Add(message);
 			return Task.CompletedTask;
 		}
 	}

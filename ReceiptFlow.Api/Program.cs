@@ -16,6 +16,8 @@ builder.AddServiceDefaults();
 // Add services to the container.
 builder.Services.AddInfrastructure(
 	builder.Configuration);
+builder.Services.AddReceiptFlowMessaging(
+	builder.Configuration);
 
 builder.Services
 	.AddOptions<KeycloakOptions>()

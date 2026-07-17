@@ -1,6 +1,8 @@
 using ReceiptFlow.Application.Abstractions.Authentication;
+using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Persistence;
 using ReceiptFlow.Application.Abstractions.Storage;
+using ReceiptFlow.Contracts;
 using ReceiptFlow.Domain.Entities;
 using ReceiptFlow.Domain.Enums;
 
@@ -10,7 +12,8 @@ public sealed class UploadReceiptDocumentHandler(
 	ICurrentUser currentUser,
 	IReceiptRepository receiptRepository,
 	IUnitOfWork unitOfWork,
-	IDocumentStorage documentStorage)
+	IDocumentStorage documentStorage,
+	IReceiptDocumentEventPublisher eventPublisher)
 {
 	private const long MaximumFileSize = 10 * 1024 * 1024;
 
@@ -68,6 +71,17 @@ public sealed class UploadReceiptDocumentHandler(
 
 		try
 		{
+			await eventPublisher.PublishAsync(
+				new ReceiptDocumentUploaded(
+					Guid.NewGuid(),
+					document.Id,
+					receipt.Id,
+					document.OwnerUserId,
+					document.StorageKey,
+					document.ContentType,
+					document.CreatedAtUtc),
+				cancellationToken);
+
 			await unitOfWork.SaveChangesAsync(cancellationToken);
 		}
 		catch

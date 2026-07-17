@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-ReceiptFlow.DocumentWorker-e73da93c-ce46-4107-bb4b-7bd13dc9aa89</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit" Version="9.1.2" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="9.1.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ReceiptFlow.AI.ServiceDefaults\ReceiptFlow.AI.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\ReceiptFlow.Application\ReceiptFlow.Application.csproj" />
+    <ProjectReference Include="..\ReceiptFlow.Contracts\ReceiptFlow.Contracts.csproj" />
+    <ProjectReference Include="..\ReceiptFlow.Infrastructure\ReceiptFlow.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

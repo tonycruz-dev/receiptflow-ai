@@ -6,9 +6,4 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\ReceiptFlow.Domain\ReceiptFlow.Domain.csproj" />
-    <ProjectReference Include="..\ReceiptFlow.Contracts\ReceiptFlow.Contracts.csproj" />
-  </ItemGroup>
-
 </Project>

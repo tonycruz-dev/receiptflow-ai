@@ -12,10 +12,12 @@
     <PackageReference Include="Aspire.Hosting" Version="13.4.6" />
     <PackageReference Include="Aspire.Hosting.Keycloak" Version="13.4.6-preview.1.26319.6" />
     <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.4.6" />
+    <PackageReference Include="Aspire.Hosting.RabbitMQ" Version="13.4.6" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ReceiptFlow.Api\ReceiptFlow.Api.csproj" />
+    <ProjectReference Include="..\ReceiptFlow.DocumentWorker\ReceiptFlow.DocumentWorker.csproj" />
   </ItemGroup>
 
 </Project>

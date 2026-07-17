@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+using MassTransit;
+using Microsoft.EntityFrameworkCore;
 using ReceiptFlow.Application.Abstractions.Persistence;
 using ReceiptFlow.Domain.Entities;
 
@@ -21,6 +22,10 @@ public sealed class ApplicationDbContext(
 
 		modelBuilder.ApplyConfigurationsFromAssembly(
 			typeof(ApplicationDbContext).Assembly);
+
+		modelBuilder.AddInboxStateEntity();
+		modelBuilder.AddOutboxMessageEntity();
+		modelBuilder.AddOutboxStateEntity();
 
 		base.OnModelCreating(modelBuilder);
 	}
