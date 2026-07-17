@@ -150,13 +150,20 @@ public static class DependencyInjection
 		IConfiguration configuration)
 	{
 		services
-			.AddOptions<DocumentIntelligenceOptions>()
-			.Bind(configuration.GetSection(
-				DocumentIntelligenceOptions.SectionName));
+			.AddOptions<NvidiaOptions>()
+			.Bind(configuration.GetSection(NvidiaOptions.SectionName))
+			.Validate(options =>
+				!string.IsNullOrWhiteSpace(options.Endpoint) &&
+				!string.IsNullOrWhiteSpace(options.Model) &&
+				options.MaxPdfPages is > 0 and <= 25 &&
+				options.MinimumConfidence is >= 0 and <= 1)
+			.ValidateOnStart();
+
+		services.AddHttpClient("NvidiaDocumentExtractor");
 
 		services.AddScoped<
 			Application.Abstractions.Extraction.IDocumentExtractor,
-			AzureDocumentIntelligenceExtractor>();
+			NvidiaDocumentExtractor>();
 
 		return services;
 	}
