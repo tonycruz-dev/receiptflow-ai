@@ -41,7 +41,9 @@ internal sealed class ReceiptRepository(
 		CancellationToken cancellationToken = default)
 	{
 		return dbContext.Receipts
+			.Include(receipt => receipt.LineItems)
 			.Include(receipt => receipt.Documents)
+				.ThenInclude(document => document.Extraction)
 			.SingleOrDefaultAsync(
 				receipt =>
 					receipt.Id == id &&

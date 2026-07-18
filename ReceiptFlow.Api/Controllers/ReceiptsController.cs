@@ -15,7 +15,8 @@ public sealed class ReceiptsController(
 	GetReceiptHandler getReceiptHandler,
 	UploadReceiptDocumentHandler uploadReceiptDocumentHandler,
 	ListReceiptDocumentsHandler listReceiptDocumentsHandler,
-	GetReceiptDocumentHandler getReceiptDocumentHandler)
+	GetReceiptDocumentHandler getReceiptDocumentHandler,
+	ReindexReceiptDocumentHandler reindexReceiptDocumentHandler)
 	: ControllerBase
 {
 	[HttpPost]
@@ -126,6 +127,29 @@ public sealed class ReceiptsController(
 		return document is null
 			? NotFound()
 			: Ok(document);
+	}
+
+	[HttpPost("{receiptId:guid}/documents/{documentId:guid}/reindex")]
+	public async Task<IActionResult> ReindexDocument(
+		Guid receiptId,
+		Guid documentId,
+		CancellationToken cancellationToken)
+	{
+		var result = await reindexReceiptDocumentHandler.HandleAsync(
+			receiptId,
+			documentId,
+			cancellationToken);
+
+		return result.Status switch
+		{
+			ReindexReceiptDocumentStatus.Accepted => Accepted(),
+			ReindexReceiptDocumentStatus.NotFound => NotFound(),
+			_ => Conflict(new ProblemDetails
+			{
+				Title = "The document is not ready for re-indexing.",
+				Status = StatusCodes.Status409Conflict
+			})
+		};
 	}
 
 	private BadRequestObjectResult InvalidFile()

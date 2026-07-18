@@ -78,6 +78,7 @@ builder.Services.AddScoped<GetReceiptHandler>();
 builder.Services.AddScoped<UploadReceiptDocumentHandler>();
 builder.Services.AddScoped<ListReceiptDocumentsHandler>();
 builder.Services.AddScoped<GetReceiptDocumentHandler>();
+builder.Services.AddScoped<ReindexReceiptDocumentHandler>();
 builder.Services.AddScoped<ReceiptSearchHandler>();
 
 builder.Services.AddControllers();
