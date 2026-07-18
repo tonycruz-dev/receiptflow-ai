@@ -46,6 +46,11 @@ Aspire runs Typesense locally with a persistent development volume. Configure
 the worker without committing secrets:
 
 ```json
+"AIProviders": {
+  "Extraction": "Nvidia",
+  "Embeddings": "Nvidia",
+  "AnswerGeneration": "None"
+},
 "NvidiaEmbeddings": {
   "Endpoint": "https://integrate.api.nvidia.com/v1",
   "Model": "your-embedding-model",
@@ -57,6 +62,17 @@ the worker without committing secrets:
   "EmbeddingDimensions": 1024
 }
 ```
+
+Provider selection happens only in Infrastructure. Application and API code use
+the provider-neutral embedding abstraction, so NVIDIA can later be replaced by
+another registered provider without changing search orchestration or HTTP
+contracts. Extraction, embeddings, and future answer generation are selected
+independently.
+
+Changing the embedding model or embedding dimensions requires re-indexing into
+a new versioned Typesense collection (for example, `receipt_chunks_v2`). Do not
+reuse a collection whose stored embedding dimension was created for another
+model.
 
 The API and worker use the same embedding and Typesense settings. Aspire maps
 the secret parameters to both processes. When running either project directly,

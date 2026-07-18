@@ -382,6 +382,9 @@ public sealed class ReceiptSearchTests
 		var configuration = new ConfigurationBuilder()
 			.AddInMemoryCollection(new Dictionary<string, string?>
 			{
+				["AIProviders:Extraction"] = "Nvidia",
+				["AIProviders:Embeddings"] = "Nvidia",
+				["AIProviders:AnswerGeneration"] = "None",
 				["ReceiptSearch:ChunkSize"] = "1000",
 				["ReceiptSearch:ChunkOverlap"] = "150",
 				["NvidiaEmbeddings:Endpoint"] = "https://nvidia.test/v1/embeddings",

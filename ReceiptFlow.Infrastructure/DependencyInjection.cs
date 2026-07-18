@@ -15,6 +15,7 @@ using ReceiptFlow.Application.Abstractions.Search;
 using ReceiptFlow.Application.Abstractions.Storage;
 using ReceiptFlow.Application.Search;
 using ReceiptFlow.Contracts;
+using ReceiptFlow.Infrastructure.AI;
 using ReceiptFlow.Infrastructure.Extraction;
 using ReceiptFlow.Infrastructure.Messaging;
 using ReceiptFlow.Infrastructure.Persistence;
@@ -54,6 +55,21 @@ public static class DependencyInjection
 
 		services.AddScoped<IUnitOfWork>(serviceProvider =>
 			serviceProvider.GetRequiredService<ApplicationDbContext>());
+
+		services
+			.AddOptions<AiProviderSelectionOptions>()
+			.Bind(configuration.GetSection(
+				AiProviderSelectionOptions.SectionName))
+			.Validate(
+				options => IsProviderSelection(options.Extraction),
+				"AIProviders:Extraction must contain a real provider name.")
+			.Validate(
+				options => IsProviderSelection(options.Embeddings),
+				"AIProviders:Embeddings must contain a real provider name.")
+			.Validate(
+				options => IsProviderSelection(options.AnswerGeneration),
+				"AIProviders:AnswerGeneration must contain a provider name or None.")
+			.ValidateOnStart();
 
 		return services;
 	}
@@ -157,6 +173,17 @@ public static class DependencyInjection
 		this IServiceCollection services,
 		IConfiguration configuration)
 	{
+		var provider = GetAiProviderSelections(configuration).Extraction;
+
+		if (!string.Equals(
+				provider,
+				AiProviderNames.Nvidia,
+				StringComparison.OrdinalIgnoreCase))
+		{
+			throw new InvalidOperationException(
+				$"The configured extraction provider '{provider}' is not supported.");
+		}
+
 		services.AddOptions<NvidiaOptions>()
 			.Bind(configuration.GetSection(NvidiaOptions.SectionName))
 			.Validate(
@@ -215,6 +242,17 @@ public static class DependencyInjection
 		this IServiceCollection services,
 		IConfiguration configuration)
 	{
+		var provider = GetAiProviderSelections(configuration).Embeddings;
+
+		if (!string.Equals(
+				provider,
+				AiProviderNames.Nvidia,
+				StringComparison.OrdinalIgnoreCase))
+		{
+			throw new InvalidOperationException(
+				$"The configured embedding provider '{provider}' is not supported.");
+		}
+
 		services
 			.AddOptions<ReceiptSearchPreparationOptions>()
 			.Bind(configuration.GetSection(
@@ -224,17 +262,6 @@ public static class DependencyInjection
 				options.ChunkOverlap >= 0 &&
 				options.ChunkOverlap < options.ChunkSize)
 			.ValidateOnStart();
-
-		//services
-		//	.AddOptions<NvidiaEmbeddingsOptions>()
-		//	.Bind(configuration.GetSection(
-		//		NvidiaEmbeddingsOptions.SectionName))
-		//	.Validate(options =>
-		//		!string.IsNullOrWhiteSpace(options.Endpoint) &&
-		//		!string.IsNullOrWhiteSpace(options.Model) &&
-		//		options.Dimensions > 0 &&
-		//		options.BatchSize > 0)
-		//	.ValidateOnStart();
 
 		services.AddOptions<NvidiaEmbeddingsOptions>()
 				.Bind(configuration.GetSection(NvidiaEmbeddingsOptions.SectionName))
@@ -291,6 +318,22 @@ public static class DependencyInjection
 		services.AddScoped<ISearchIndex, TypesenseSearchIndex>();
 
 		return services;
+	}
+
+	private static AiProviderSelectionOptions GetAiProviderSelections(
+		IConfiguration configuration)
+	{
+		return configuration
+			.GetSection(AiProviderSelectionOptions.SectionName)
+			.Get<AiProviderSelectionOptions>()
+			?? throw new InvalidOperationException(
+				"AI provider selections are required.");
+	}
+
+	private static bool IsProviderSelection(string? provider)
+	{
+		return !string.IsNullOrWhiteSpace(provider) &&
+			!provider.StartsWith("__", StringComparison.Ordinal);
 	}
 
 	public static IServiceCollection AddReceiptFlowMessaging(

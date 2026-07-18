@@ -179,6 +179,9 @@ public sealed class NvidiaDocumentExtractorTests
 		var configuration = new ConfigurationBuilder()
 			.AddInMemoryCollection(new Dictionary<string, string?>
 			{
+				["AIProviders:Extraction"] = "Nvidia",
+				["AIProviders:Embeddings"] = "Nvidia",
+				["AIProviders:AnswerGeneration"] = "None",
 				["Nvidia:Endpoint"] = "https://example.test/v1",
 				["Nvidia:Model"] = "test-vision-model",
 				["Nvidia:ApiKey"] = "test-key",
