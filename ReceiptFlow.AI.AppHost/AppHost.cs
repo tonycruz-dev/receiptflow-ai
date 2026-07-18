@@ -44,18 +44,21 @@ var keycloak = builder.AddKeycloak("Keycloak", 6001)
 	.WithDataVolume("keycloak-receipt-data")
 	.WithRealmImport("./Realms");
 
+var nvidiaApiKey = builder.AddParameter("nvidia-api-key", secret: true);
+
 builder.AddProject<Projects.ReceiptFlow_Api>("receiptflow-api")
+	.WithEnvironment("NvidiaEmbeddings__ApiKey", nvidiaApiKey)
 	.WithReference(receiptFlowDatabase)
 	.WithReference(blobs)
 	.WithReference(messaging)
 	.WithReference(keycloak)
+	.WaitFor(typesense)
+	.WithEnvironment("Typesense__Endpoint", typesense.GetEndpoint("http"))
+	.WithEnvironment("Typesense__ApiKey", typesenseApiKey)
 	.WaitFor(receiptFlowDatabase)
 	.WaitFor(blobs)
 	.WaitFor(messaging)
 	.WaitFor(keycloak);
-
-var nvidiaApiKey = builder.AddParameter("nvidia-api-key", secret: true);
-
 builder.AddProject<Projects.ReceiptFlow_DocumentWorker>(
 	"receiptflow-documentworker")
 	.WithEnvironment("Nvidia__ApiKey",	nvidiaApiKey)

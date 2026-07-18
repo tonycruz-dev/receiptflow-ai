@@ -8,6 +8,7 @@ using ReceiptFlow.Application.Receipts.CreateReceipt;
 using ReceiptFlow.Application.Receipts.Documents;
 using ReceiptFlow.Application.Receipts.GetReceipt;
 using ReceiptFlow.Application.Receipts.UploadDocument;
+using ReceiptFlow.Application.Search.Receipts;
 using ReceiptFlow.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,6 +19,8 @@ builder.AddServiceDefaults();
 builder.Services.AddInfrastructure(
 	builder.Configuration);
 builder.Services.AddReceiptFlowMessaging(
+	builder.Configuration);
+builder.Services.AddReceiptSearchIndexing(
 	builder.Configuration);
 
 builder.Services
@@ -75,6 +78,7 @@ builder.Services.AddScoped<GetReceiptHandler>();
 builder.Services.AddScoped<UploadReceiptDocumentHandler>();
 builder.Services.AddScoped<ListReceiptDocumentsHandler>();
 builder.Services.AddScoped<GetReceiptDocumentHandler>();
+builder.Services.AddScoped<ReceiptSearchHandler>();
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi

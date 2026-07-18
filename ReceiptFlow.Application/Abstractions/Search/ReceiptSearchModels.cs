@@ -47,6 +47,29 @@ public sealed record SearchIndexDocument(
 	long ExtractedAtUtc,
 	IReadOnlyList<float> Embedding);
 
+public sealed record SearchIndexQuery(
+	string Query,
+	string OwnerUserId,
+	IReadOnlyList<float> Embedding,
+	int Page,
+	int PageSize);
+
+public sealed record SearchIndexPage(
+	long Total,
+	IReadOnlyList<SearchIndexMatch> Matches);
+
+public sealed record SearchIndexMatch(
+	Guid ReceiptId,
+	Guid DocumentId,
+	int ChunkIndex,
+	string? MerchantName,
+	DateTimeOffset? TransactionDate,
+	string? Category,
+	string? Currency,
+	double? Total,
+	string Content,
+	double RelevanceScore);
+
 public static class SearchChecksum
 {
 	public static string Sha256(string content)

@@ -651,6 +651,11 @@ public sealed class ReceiptSearchIndexingTests
 		public List<IReadOnlySet<string>> DeleteCalls { get; } = [];
 		public SearchIndexingException? UpsertException { get; init; }
 
+		public Task<SearchIndexPage> SearchAsync(
+			SearchIndexQuery query,
+			CancellationToken cancellationToken = default) =>
+			Task.FromResult(new SearchIndexPage(0, []));
+
 		public Task UpsertAsync(
 			IReadOnlyList<SearchIndexDocument> documents,
 			CancellationToken cancellationToken = default)

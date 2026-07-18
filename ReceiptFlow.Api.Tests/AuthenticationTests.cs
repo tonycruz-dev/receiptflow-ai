@@ -123,7 +123,18 @@ internal sealed class ReceiptFlowApiFactory
 				["Keycloak:Audience"] = "receiptflow-api",
 				["Keycloak:RequireHttpsMetadata"] = "false",
 				["DocumentStorage:Provider"] = "Local",
-				["DocumentStorage:RootPath"] = StorageRoot
+				["DocumentStorage:RootPath"] = StorageRoot,
+				["ReceiptSearch:ChunkSize"] = "1000",
+				["ReceiptSearch:ChunkOverlap"] = "150",
+				["NvidiaEmbeddings:Endpoint"] = "https://nvidia.test/v1/embeddings",
+				["NvidiaEmbeddings:Model"] = "test-embedding-model",
+				["NvidiaEmbeddings:Dimensions"] = "1024",
+				["NvidiaEmbeddings:BatchSize"] = "16",
+				["NvidiaEmbeddings:ApiKey"] = "test-key",
+				["Typesense:Endpoint"] = "http://typesense.test",
+				["Typesense:CollectionName"] = "receipt_chunks_v1",
+				["Typesense:EmbeddingDimensions"] = "1024",
+				["Typesense:ApiKey"] = "test-key"
 			});
 		});
 

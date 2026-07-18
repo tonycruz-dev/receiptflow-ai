@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -19,6 +20,113 @@ internal sealed class TypesenseSearchIndex(
 	private bool schemaReady;
 	private static readonly JsonSerializerOptions JsonOptions =
 		new(JsonSerializerDefaults.Web);
+
+	public async Task<SearchIndexPage> SearchAsync(
+		SearchIndexQuery query,
+		CancellationToken cancellationToken = default)
+	{
+		if (string.IsNullOrWhiteSpace(query.OwnerUserId))
+		{
+			throw new SearchIndexingException(
+				"Receipt search owner is required.",
+				isTransient: false);
+		}
+
+		if (query.Embedding.Count != options.EmbeddingDimensions)
+		{
+			throw new SearchIndexingException(
+				"Query embedding dimensions do not match Typesense schema.",
+				isTransient: false);
+		}
+
+		await EnsureCollectionAsync(cancellationToken);
+
+		var vector = string.Join(
+			',',
+			query.Embedding.Select(value =>
+				value.ToString("R", CultureInfo.InvariantCulture)));
+		var body = new
+		{
+			searches = new[]
+			{
+				new
+				{
+					collection = options.CollectionName,
+					q = query.Query,
+					query_by = "content,merchant_name,category,currency,embedding",
+					query_by_weights = "5,3,2,1,0",
+					vector_query = $"embedding:([{vector}], alpha: 0.5)",
+					filter_by = BuildOwnerFilter(query.OwnerUserId),
+					sort_by = "_text_match:desc",
+					drop_tokens_threshold = 0,
+					rerank_hybrid_matches = true,
+					page = query.Page,
+					per_page = query.PageSize,
+					exclude_fields =
+						"embedding,owner_user_id,content_checksum,extracted_at"
+				}
+			}
+		};
+
+		using var request = CreateRequest(HttpMethod.Post, "/multi_search");
+		request.Content = JsonContent.Create(body, options: JsonOptions);
+		using var response = await SendAsync(request, cancellationToken);
+
+		if (!response.IsSuccessStatusCode)
+		{
+			throw new SearchIndexingException(
+				"Typesense receipt search failed.",
+				IsTransient(response.StatusCode));
+		}
+
+		TypesenseMultiSearchResponse? payload;
+
+		try
+		{
+			payload = await response.Content
+				.ReadFromJsonAsync<TypesenseMultiSearchResponse>(
+					JsonOptions,
+					cancellationToken);
+		}
+		catch (JsonException exception)
+		{
+			throw new SearchIndexingException(
+				"Typesense receipt search response was malformed.",
+				isTransient: false,
+				exception);
+		}
+
+		if (payload?.Results is not { Count: 1 })
+		{
+			throw new SearchIndexingException(
+				"Typesense receipt search response was incomplete.",
+				isTransient: false);
+		}
+
+		var result = payload.Results[0];
+
+		if (result.Hits is null)
+		{
+			throw new SearchIndexingException(
+				"Typesense receipt search response was incomplete.",
+				isTransient: false);
+		}
+
+		try
+		{
+			return new SearchIndexPage(
+				result.Found,
+				result.Hits.Select(ToSearchIndexMatch).ToArray());
+		}
+		catch (Exception exception)
+			when (exception is FormatException or ArgumentOutOfRangeException)
+		{
+			throw new SearchIndexingException(
+				"Typesense receipt search response contained invalid fields.",
+				isTransient: false,
+				exception);
+		}
+	}
 
 	public async Task UpsertAsync(
 		IReadOnlyList<SearchIndexDocument> documents,
@@ -297,7 +405,7 @@ internal sealed class TypesenseSearchIndex(
 		CancellationToken cancellationToken)
 	{
 		var filter = Uri.EscapeDataString(
-			$"document_id:={documentId} && owner_user_id:={ownerUserId}");
+			$"document_id:={documentId} && {BuildOwnerFilter(ownerUserId)}");
 		using var request = CreateRequest(
 			HttpMethod.Get,
 			$"/collections/{options.CollectionName}/documents/search?q=*&query_by=content&filter_by={filter}&per_page=250");
@@ -393,6 +501,38 @@ internal sealed class TypesenseSearchIndex(
 			(int)statusCode >= 500;
 	}
 
+	private static string BuildOwnerFilter(string ownerUserId)
+	{
+		var escaped = ownerUserId
+			.Replace("\\", "\\\\", StringComparison.Ordinal)
+			.Replace("`", "\\`", StringComparison.Ordinal);
+
+		return $"owner_user_id:=`{escaped}`";
+	}
+
+	private static SearchIndexMatch ToSearchIndexMatch(TypesenseSearchHit hit)
+	{
+		var document = hit.Document;
+		var relevance = hit.TextMatch ??
+			(hit.VectorDistance is double distance
+				? 1d / (1d + distance)
+				: 0d);
+
+		return new SearchIndexMatch(
+			Guid.Parse(document.ReceiptId),
+			Guid.Parse(document.DocumentId),
+			document.ChunkIndex,
+			document.MerchantName,
+			document.TransactionDate is long transactionDate
+				? DateTimeOffset.FromUnixTimeSeconds(transactionDate)
+				: null,
+			document.Category,
+			document.Currency,
+			document.Total,
+			document.Content,
+			relevance);
+	}
+
 	private static string ToTypesenseDocumentJson(
 		SearchIndexDocument document)
 	{
@@ -429,6 +569,29 @@ internal sealed class TypesenseSearchIndex(
 
 	private sealed record TypesenseSearchResponse(
 		IReadOnlyList<TypesenseHit> Hits);
+
+	private sealed record TypesenseMultiSearchResponse(
+		IReadOnlyList<TypesenseSearchResult> Results);
+
+	private sealed record TypesenseSearchResult(
+		long Found,
+		IReadOnlyList<TypesenseSearchHit> Hits);
+
+	private sealed record TypesenseSearchHit(
+		TypesenseReceiptDocument Document,
+		[property: JsonPropertyName("text_match")] double? TextMatch,
+		[property: JsonPropertyName("vector_distance")] double? VectorDistance);
+
+	private sealed record TypesenseReceiptDocument(
+		[property: JsonPropertyName("receipt_id")] string ReceiptId,
+		[property: JsonPropertyName("document_id")] string DocumentId,
+		[property: JsonPropertyName("chunk_index")] int ChunkIndex,
+		[property: JsonPropertyName("merchant_name")] string? MerchantName,
+		[property: JsonPropertyName("transaction_date")] long? TransactionDate,
+		string? Category,
+		string? Currency,
+		double? Total,
+		string Content);
 
 	private sealed record TypesenseHit(
 		TypesenseDocument Document);

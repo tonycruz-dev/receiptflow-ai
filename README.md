@@ -29,7 +29,7 @@ Hosted inference sends receipt image/PDF content to the configured NVIDIA
 provider. Automated tests use mocked HTTP handlers and do not call NVIDIA or
 consume API quota.
 
-## RAG Indexing Foundation
+## RAG Indexing and Retrieval Foundation
 
 When extraction succeeds, the document worker publishes a
 `ReceiptDocumentExtractionCompletedV1` event. A second worker consumer loads the
@@ -37,6 +37,10 @@ owned receipt/document extraction, prepares deterministic text chunks, generates
 NVIDIA-hosted embeddings, and upserts owner-scoped chunks into the versioned
 Typesense collection. Tenant ownership is always read from PostgreSQL.
 Typesense data is derived and can be rebuilt from PostgreSQL.
+
+The authenticated `POST /api/search/receipts` endpoint embeds a bounded query
+and performs hybrid keyword/vector retrieval. Every Typesense search applies an
+exact `owner_user_id` filter built from the authenticated Keycloak `sub` claim.
 
 Aspire runs Typesense locally with a persistent development volume. Configure
 the worker without committing secrets:
@@ -54,13 +58,15 @@ the worker without committing secrets:
 }
 ```
 
-Set secret values outside tracked files:
+The API and worker use the same embedding and Typesense settings. Aspire maps
+the secret parameters to both processes. When running either project directly,
+set secret values outside tracked files:
 
 ```powershell
 dotnet user-secrets set "NvidiaEmbeddings:ApiKey" "<key>" --project .\ReceiptFlow.DocumentWorker
 dotnet user-secrets set "Parameters:typesense-api-key" "<key>" --project .\ReceiptFlow.AI.AppHost
-# or use NVIDIA_API_KEY / TYPESENSE_API_KEY in the environment.
+# or use NVIDIA_API_KEY / TYPESENSE_API_KEY in the process environment.
 ```
 
-Automated indexing tests use mocked embedding and Typesense clients and never
+Automated indexing and retrieval tests use mocked embedding and Typesense clients and never
 contact NVIDIA or a real Typesense/Azure account.
