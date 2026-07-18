@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ReceiptFlow.Api\ReceiptFlow.Api.csproj" />
     <ProjectReference Include="..\ReceiptFlow.DocumentWorker\ReceiptFlow.DocumentWorker.csproj" />
+    <ProjectReference Include="..\ReceiptFlow.Mcp\ReceiptFlow.Mcp.csproj" />
   </ItemGroup>
 
 </Project>

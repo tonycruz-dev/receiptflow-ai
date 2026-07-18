@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ReceiptFlow.AI.ServiceDefaults\ReceiptFlow.AI.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\ReceiptFlow.Application\ReceiptFlow.Application.csproj" />
+    <ProjectReference Include="..\ReceiptFlow.Infrastructure\ReceiptFlow.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

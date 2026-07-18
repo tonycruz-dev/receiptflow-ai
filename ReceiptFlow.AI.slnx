@@ -8,4 +8,5 @@
   <Project Path="ReceiptFlow.DocumentWorker/ReceiptFlow.DocumentWorker.csproj" />
   <Project Path="ReceiptFlow.Domain/ReceiptFlow.Domain.csproj" />
   <Project Path="ReceiptFlow.Infrastructure/ReceiptFlow.Infrastructure.csproj" />
+  <Project Path="ReceiptFlow.Mcp/ReceiptFlow.Mcp.csproj" />
 </Solution>

@@ -31,6 +31,7 @@
     <ProjectReference Include="..\ReceiptFlow.Application\ReceiptFlow.Application.csproj" />
     <ProjectReference Include="..\ReceiptFlow.Contracts\ReceiptFlow.Contracts.csproj" />
     <ProjectReference Include="..\ReceiptFlow.DocumentWorker\ReceiptFlow.DocumentWorker.csproj" Aliases="DocumentWorker" />
+    <ProjectReference Include="..\ReceiptFlow.Mcp\ReceiptFlow.Mcp.csproj" Aliases="Mcp" />
   </ItemGroup>
 
 </Project>

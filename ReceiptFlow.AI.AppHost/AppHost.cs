@@ -74,4 +74,15 @@ builder.AddProject<Projects.ReceiptFlow_DocumentWorker>(
 	.WithEnvironment("Typesense__Endpoint", typesense.GetEndpoint("http"))
 	.WithEnvironment("Typesense__ApiKey", typesenseApiKey);
 
+builder.AddProject<Projects.ReceiptFlow_Mcp>("receiptflow-mcp")
+	.WithEnvironment("NvidiaEmbeddings__ApiKey", nvidiaApiKey)
+	.WithEnvironment("NvidiaChat__ApiKey", nvidiaApiKey)
+	.WithEnvironment("Typesense__Endpoint", typesense.GetEndpoint("http"))
+	.WithEnvironment("Typesense__ApiKey", typesenseApiKey)
+	.WithEnvironment("Keycloak__Authority", "https://localhost:6001/realms/receipt")
+	.WithEnvironment("Keycloak__Audience", "receiptflow-mcp")
+	.WithReference(keycloak)
+	.WaitFor(typesense)
+	.WaitFor(keycloak);
+
 builder.Build().Run();
