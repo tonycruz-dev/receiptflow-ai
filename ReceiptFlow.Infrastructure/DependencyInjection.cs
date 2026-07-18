@@ -12,10 +12,12 @@ using Polly.Timeout;
 using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Persistence;
 using ReceiptFlow.Application.Abstractions.Search;
+using ReceiptFlow.Application.Abstractions.Assistant;
 using ReceiptFlow.Application.Abstractions.Storage;
 using ReceiptFlow.Application.Search;
 using ReceiptFlow.Contracts;
 using ReceiptFlow.Infrastructure.AI;
+using ReceiptFlow.Infrastructure.Assistant;
 using ReceiptFlow.Infrastructure.Extraction;
 using ReceiptFlow.Infrastructure.Messaging;
 using ReceiptFlow.Infrastructure.Persistence;
@@ -317,6 +319,82 @@ public static class DependencyInjection
 		services.AddScoped<ITextEmbeddingGenerator, NvidiaTextEmbeddingGenerator>();
 		services.AddScoped<ISearchIndex, TypesenseSearchIndex>();
 
+		return services;
+	}
+
+	public static IServiceCollection AddReceiptAnswerGeneration(
+		this IServiceCollection services,
+		IConfiguration configuration)
+	{
+		var selection = configuration
+			.GetSection(ReceiptAiOptions.SectionName)
+			.Get<ReceiptAiOptions>()
+			?? new ReceiptAiOptions();
+
+		if (!string.Equals(
+			selection.AnswerProvider,
+			AiProviderNames.Nvidia,
+			StringComparison.OrdinalIgnoreCase))
+		{
+			throw new InvalidOperationException(
+				$"The configured answer provider '{selection.AnswerProvider}' is not supported.");
+		}
+
+		services.AddOptions<ReceiptAiOptions>()
+			.Bind(configuration.GetSection(ReceiptAiOptions.SectionName))
+			.Validate(
+				options => !string.IsNullOrWhiteSpace(options.AnswerProvider) &&
+					!options.AnswerProvider.StartsWith("__", StringComparison.Ordinal),
+				"AI:AnswerProvider must contain a real provider name.")
+			.ValidateOnStart();
+
+		services.AddOptions<NvidiaChatOptions>()
+			.Bind(configuration.GetSection(NvidiaChatOptions.SectionName))
+			.Validate(
+				options => Uri.TryCreate(options.Endpoint, UriKind.Absolute, out var uri) &&
+					uri.Scheme == Uri.UriSchemeHttps,
+				"NvidiaChat:Endpoint must be a valid absolute HTTPS URI.")
+			.Validate(
+				options => !string.IsNullOrWhiteSpace(options.Model) &&
+					!options.Model.StartsWith("__", StringComparison.Ordinal),
+				"NvidiaChat:Model must contain a real model ID.")
+			.Validate(
+				options => !string.IsNullOrWhiteSpace(options.ApiKey) ||
+					!string.IsNullOrWhiteSpace(
+						Environment.GetEnvironmentVariable("NVIDIA_API_KEY")),
+				"NvidiaChat:ApiKey is required.")
+			.Validate(options => options.MaximumOutputTokens is > 0 and <= 4096)
+			.Validate(options => options.Temperature is >= 0 and <= 1)
+			.ValidateOnStart();
+
+		services.AddHttpClient("NvidiaReceiptAnswerGenerator")
+			.ConfigureHttpClient(client => client.Timeout = Timeout.InfiniteTimeSpan)
+			.ConfigureAdditionalHttpMessageHandlers((handlers, _) =>
+			{
+				for (var index = handlers.Count - 1; index >= 0; index--)
+				{
+					if (handlers[index] is ResilienceHandler)
+						handlers.RemoveAt(index);
+				}
+			})
+			.AddStandardResilienceHandler(options =>
+			{
+				options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(90);
+				options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
+				options.Retry.MaxRetryAttempts = 2;
+				options.Retry.Delay = TimeSpan.FromSeconds(2);
+				options.Retry.BackoffType = DelayBackoffType.Exponential;
+				options.Retry.ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
+					.Handle<HttpRequestException>()
+					.Handle<TimeoutRejectedException>()
+					.HandleResult(response =>
+						response.StatusCode is HttpStatusCode.RequestTimeout ||
+						(int)response.StatusCode == 429 ||
+						(int)response.StatusCode >= 500);
+				options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(3);
+			});
+
+		services.AddScoped<IReceiptAnswerGenerator, NvidiaReceiptAnswerGenerator>();
 		return services;
 	}
 

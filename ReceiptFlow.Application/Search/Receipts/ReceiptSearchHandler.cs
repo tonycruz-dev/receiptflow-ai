@@ -8,7 +8,7 @@ public sealed class ReceiptSearchHandler(
 	ITextEmbeddingGenerator embeddingGenerator,
 	ISearchIndex searchIndex)
 {
-	public const int MaximumQueryLength = 500;
+	public const int MaximumQueryLength = 1000;
 	public const int ExpectedEmbeddingDimensions = 1024;
 
 	public async Task<ReceiptSearchResponse> HandleAsync(

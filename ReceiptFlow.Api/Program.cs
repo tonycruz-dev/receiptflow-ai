@@ -4,6 +4,7 @@ using Microsoft.IdentityModel.Tokens;
 using ReceiptFlow.Api.Authentication;
 using ReceiptFlow.Api.Options;
 using ReceiptFlow.Application.Abstractions.Authentication;
+using ReceiptFlow.Application.Assistant.Receipts;
 using ReceiptFlow.Application.Receipts.CreateReceipt;
 using ReceiptFlow.Application.Receipts.Documents;
 using ReceiptFlow.Application.Receipts.GetReceipt;
@@ -21,6 +22,8 @@ builder.Services.AddInfrastructure(
 builder.Services.AddReceiptFlowMessaging(
 	builder.Configuration);
 builder.Services.AddReceiptSearchIndexing(
+	builder.Configuration);
+builder.Services.AddReceiptAnswerGeneration(
 	builder.Configuration);
 
 builder.Services
@@ -80,6 +83,7 @@ builder.Services.AddScoped<ListReceiptDocumentsHandler>();
 builder.Services.AddScoped<GetReceiptDocumentHandler>();
 builder.Services.AddScoped<ReindexReceiptDocumentHandler>();
 builder.Services.AddScoped<ReceiptSearchHandler>();
+builder.Services.AddScoped<AskReceiptQuestionHandler>();
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi

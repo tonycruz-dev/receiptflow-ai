@@ -48,6 +48,7 @@ var nvidiaApiKey = builder.AddParameter("nvidia-api-key", secret: true);
 
 builder.AddProject<Projects.ReceiptFlow_Api>("receiptflow-api")
 	.WithEnvironment("NvidiaEmbeddings__ApiKey", nvidiaApiKey)
+	.WithEnvironment("NvidiaChat__ApiKey", nvidiaApiKey)
 	.WithReference(receiptFlowDatabase)
 	.WithReference(blobs)
 	.WithReference(messaging)
