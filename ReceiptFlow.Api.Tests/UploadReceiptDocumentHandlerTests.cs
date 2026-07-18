@@ -115,12 +115,21 @@ public sealed class UploadReceiptDocumentHandlerTests
 		: IReceiptDocumentEventPublisher
 	{
 		public List<ReceiptDocumentUploaded> Messages { get; } = [];
+		public List<ReceiptDocumentExtractionCompleted> ExtractionCompletedMessages { get; } = [];
 
 		public Task PublishAsync(
 			ReceiptDocumentUploaded message,
 			CancellationToken cancellationToken)
 		{
 			Messages.Add(message);
+			return Task.CompletedTask;
+		}
+
+		public Task PublishAsync(
+			ReceiptDocumentExtractionCompleted message,
+			CancellationToken cancellationToken)
+		{
+			ExtractionCompletedMessages.Add(message);
 			return Task.CompletedTask;
 		}
 	}

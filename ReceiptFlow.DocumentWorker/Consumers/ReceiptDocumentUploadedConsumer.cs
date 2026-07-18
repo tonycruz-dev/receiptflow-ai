@@ -1,6 +1,7 @@
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using ReceiptFlow.Application.Abstractions.Extraction;
+using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Storage;
 using ReceiptFlow.Contracts;
 using ReceiptFlow.Domain.Entities;
@@ -13,6 +14,7 @@ public sealed class ReceiptDocumentUploadedConsumer(
 	ApplicationDbContext dbContext,
 	IDocumentStorage documentStorage,
 	IDocumentExtractor documentExtractor,
+	IReceiptDocumentEventPublisher eventPublisher,
 	ILogger<ReceiptDocumentUploadedConsumer> logger)
 	: IConsumer<ReceiptDocumentUploaded>
 {
@@ -80,8 +82,20 @@ public sealed class ReceiptDocumentUploadedConsumer(
 				document.ContentType,
 				cancellationToken);
 
-			PersistExtraction(document, result);
+			var extraction = PersistExtraction(document, result);
 			document.MarkCompleted();
+
+			if (extraction is not null && HasSearchableContent(result))
+			{
+				await eventPublisher.PublishAsync(
+					new ReceiptDocumentExtractionCompleted(
+						Guid.NewGuid(),
+						document.Id,
+						document.ReceiptId!.Value,
+						document.OwnerUserId,
+						extraction.ExtractedAtUtc),
+					cancellationToken);
+			}
 
 			await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -114,32 +128,43 @@ public sealed class ReceiptDocumentUploadedConsumer(
 		}
 	}
 
-	private void PersistExtraction(
+	private static bool HasSearchableContent(DocumentExtractionResult result) =>
+		!string.IsNullOrWhiteSpace(result.RawText) ||
+		!string.IsNullOrWhiteSpace(result.Fields.MerchantName) ||
+		result.Fields.TransactionDate is not null ||
+		result.Fields.Subtotal is not null ||
+		result.Fields.Tax is not null ||
+		result.Fields.Total is not null ||
+		!string.IsNullOrWhiteSpace(result.Fields.Currency) ||
+		result.LineItems.Any(item => !string.IsNullOrWhiteSpace(item.Description));
+
+	private DocumentExtraction? PersistExtraction(
 		Document document,
 		DocumentExtractionResult result)
 	{
 		if (document.Extraction is not null)
-			return;
+			return null;
 
-		dbContext.DocumentExtractions.Add(
-			new DocumentExtraction(
-				document.Id,
-				result.RawText,
-				result.Fields.MerchantName,
-				result.Fields.TransactionDate,
-				result.Fields.Subtotal,
-				result.Fields.Tax,
-				result.Fields.Total,
-				result.Fields.Currency,
-				result.OverallConfidence,
-				result.Provider,
-				result.ModelId,
-				result.StructuredDataJson));
+		var extraction = new DocumentExtraction(
+			document.Id,
+			result.RawText,
+			result.Fields.MerchantName,
+			result.Fields.TransactionDate,
+			result.Fields.Subtotal,
+			result.Fields.Tax,
+			result.Fields.Total,
+			result.Fields.Currency,
+			result.OverallConfidence,
+			result.Provider,
+			result.ModelId,
+			result.StructuredDataJson);
+
+		dbContext.DocumentExtractions.Add(extraction);
 
 		if (document.Receipt is null ||
 			document.Receipt.LineItems.Count != 0)
 		{
-			return;
+			return extraction;
 		}
 
 		foreach (var item in result.LineItems)
@@ -157,5 +182,7 @@ public sealed class ReceiptDocumentUploadedConsumer(
 				item.LineTotal,
 				item.Tax);
 		}
+
+		return extraction;
 	}
 }

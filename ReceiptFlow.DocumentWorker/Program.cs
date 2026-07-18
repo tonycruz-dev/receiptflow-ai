@@ -9,9 +9,15 @@ builder.Services.AddInfrastructure(
 	builder.Configuration);
 builder.Services.AddDocumentExtraction(
 	builder.Configuration);
+builder.Services.AddReceiptSearchIndexing(
+	builder.Configuration);
 builder.Services.AddReceiptFlowMessaging(
 	builder.Configuration,
-	messaging => messaging.AddConsumer<ReceiptDocumentUploadedConsumer>());
+	messaging =>
+	{
+		messaging.AddConsumer<ReceiptDocumentUploadedConsumer>();
+		messaging.AddConsumer<ReceiptDocumentExtractionCompletedConsumer>();
+	});
 
 var host = builder.Build();
 host.Run();

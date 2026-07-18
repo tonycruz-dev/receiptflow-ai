@@ -83,6 +83,7 @@ public sealed class ReceiptDocumentMessagingTests
 			dbContext,
 			new FakeDocumentStorage(),
 			new FakeDocumentExtractor(),
+			new FakeReceiptDocumentEventPublisher(),
 			NullLogger<ReceiptDocumentUploadedConsumer>.Instance);
 
 		await consumer.HandleAsync(CreateMessage(document));
@@ -97,6 +98,7 @@ public sealed class ReceiptDocumentMessagingTests
 			dbContext,
 			new FakeDocumentStorage(),
 			new FakeDocumentExtractor(),
+			new FakeReceiptDocumentEventPublisher(),
 			NullLogger<ReceiptDocumentUploadedConsumer>.Instance);
 		var message = CreateMessage(document);
 
@@ -115,6 +117,7 @@ public sealed class ReceiptDocumentMessagingTests
 			dbContext,
 			new FakeDocumentStorage(),
 			new FakeDocumentExtractor(),
+			new FakeReceiptDocumentEventPublisher(),
 			NullLogger<ReceiptDocumentUploadedConsumer>.Instance);
 
 		await consumer.HandleAsync(
@@ -279,12 +282,21 @@ public sealed class ReceiptDocumentMessagingTests
 		: IReceiptDocumentEventPublisher
 	{
 		public List<ReceiptDocumentUploaded> Messages { get; } = [];
+		public List<ReceiptDocumentExtractionCompleted> ExtractionCompletedMessages { get; } = [];
 
 		public Task PublishAsync(
 			ReceiptDocumentUploaded message,
 			CancellationToken cancellationToken)
 		{
 			Messages.Add(message);
+			return Task.CompletedTask;
+		}
+
+		public Task PublishAsync(
+			ReceiptDocumentExtractionCompleted message,
+			CancellationToken cancellationToken)
+		{
+			ExtractionCompletedMessages.Add(message);
 			return Task.CompletedTask;
 		}
 	}

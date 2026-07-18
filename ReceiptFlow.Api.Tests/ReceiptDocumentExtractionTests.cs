@@ -3,6 +3,7 @@ extern alias DocumentWorker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using ReceiptFlow.Application.Abstractions.Extraction;
+using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Storage;
 using ReceiptFlow.Contracts;
 using ReceiptFlow.Domain.Entities;
@@ -75,6 +76,38 @@ public sealed class ReceiptDocumentExtractionTests
 	}
 
 	[Fact]
+	public async Task SuccessfulExtraction_PublishesExtractionCompleted()
+	{
+		await using var dbContext = CreateDbContext();
+		var document = AddDocument(dbContext, "image/jpeg");
+		var publisher = new FakeReceiptDocumentEventPublisher();
+		var consumer = CreateConsumer(dbContext, publisher: publisher);
+
+		await consumer.HandleAsync(CreateMessage(document));
+
+		var message = Assert.Single(publisher.ExtractionCompletedMessages);
+		Assert.Equal(document.Id, message.DocumentId);
+		Assert.Equal(document.ReceiptId, message.ReceiptId);
+		Assert.Equal("user-a", message.OwnerUserId);
+	}
+
+	[Fact]
+	public async Task PermanentFailure_DoesNotPublishExtractionCompleted()
+	{
+		await using var dbContext = CreateDbContext();
+		var document = AddDocument(dbContext, "image/jpeg");
+		var publisher = new FakeReceiptDocumentEventPublisher();
+		var consumer = CreateConsumer(
+			dbContext,
+			new FakeDocumentExtractor(permanentFailure: true),
+			publisher);
+
+		await consumer.HandleAsync(CreateMessage(document));
+
+		Assert.Empty(publisher.ExtractionCompletedMessages);
+	}
+
+	[Fact]
 	public async Task TransientFailure_IsRetried()
 	{
 		await using var dbContext = CreateDbContext();
@@ -130,12 +163,14 @@ public sealed class ReceiptDocumentExtractionTests
 
 	private static ReceiptDocumentUploadedConsumer CreateConsumer(
 		ApplicationDbContext dbContext,
-		IDocumentExtractor? extractor = null)
+		IDocumentExtractor? extractor = null,
+		FakeReceiptDocumentEventPublisher? publisher = null)
 	{
 		return new ReceiptDocumentUploadedConsumer(
 			dbContext,
 			new FakeDocumentStorage(),
 			extractor ?? new FakeDocumentExtractor(),
+			publisher ?? new FakeReceiptDocumentEventPublisher(),
 			NullLogger<ReceiptDocumentUploadedConsumer>.Instance);
 	}
 
@@ -266,6 +301,25 @@ public sealed class ReceiptDocumentExtractionTests
 					"Fake",
 					"prebuilt-receipt",
 					"{\"source\":\"test\"}"));
+		}
+	}
+
+	private sealed class FakeReceiptDocumentEventPublisher
+		: IReceiptDocumentEventPublisher
+	{
+		public List<ReceiptDocumentExtractionCompleted> ExtractionCompletedMessages { get; } = [];
+
+		public Task PublishAsync(
+			ReceiptDocumentUploaded message,
+			CancellationToken cancellationToken) =>
+			Task.CompletedTask;
+
+		public Task PublishAsync(
+			ReceiptDocumentExtractionCompleted message,
+			CancellationToken cancellationToken)
+		{
+			ExtractionCompletedMessages.Add(message);
+			return Task.CompletedTask;
 		}
 	}
 }

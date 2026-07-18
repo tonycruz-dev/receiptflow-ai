@@ -18,6 +18,28 @@ var blobs = storage.AddBlobs("blobs");
 var messaging = builder.AddRabbitMQ("messaging")
 	.WithDataVolume("rabbitmq-receipt-data");
 
+var typesenseApiKey = builder.AddParameter(
+	"typesense-api-key",
+	secret: true);
+
+var typesense = builder.AddContainer(
+	"typesense",
+	"typesense/typesense",
+	"28.0")
+	.WithArgs(
+		"--data-dir",
+		"/data",
+		"--api-key",
+		typesenseApiKey,
+		"--enable-cors",
+		"false")
+	.WithVolume("typesense-receipt-data", "/data")
+	.WithHttpEndpoint(
+		port: 8108,
+		targetPort: 8108,
+		name: "http")
+	.WithHttpHealthCheck("/health");
+
 var keycloak = builder.AddKeycloak("Keycloak", 6001)
 	.WithDataVolume("keycloak-receipt-data")
 	.WithRealmImport("./Realms");
@@ -39,6 +61,9 @@ builder.AddProject<Projects.ReceiptFlow_DocumentWorker>(
 	.WithReference(messaging)
 	.WaitFor(receiptFlowDatabase)
 	.WaitFor(blobs)
-	.WaitFor(messaging);
+	.WaitFor(messaging)
+	.WaitFor(typesense)
+	.WithEnvironment("Typesense__Endpoint", typesense.GetEndpoint("http"))
+	.WithEnvironment("Typesense__ApiKey", typesenseApiKey);
 
 builder.Build().Run();

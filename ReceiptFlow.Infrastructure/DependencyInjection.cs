@@ -7,12 +7,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Persistence;
+using ReceiptFlow.Application.Abstractions.Search;
 using ReceiptFlow.Application.Abstractions.Storage;
+using ReceiptFlow.Application.Search;
 using ReceiptFlow.Contracts;
 using ReceiptFlow.Infrastructure.Extraction;
 using ReceiptFlow.Infrastructure.Messaging;
 using ReceiptFlow.Infrastructure.Persistence;
 using ReceiptFlow.Infrastructure.Persistence.Repositories;
+using ReceiptFlow.Infrastructure.Search;
 using ReceiptFlow.Infrastructure.Storage;
 
 namespace ReceiptFlow.Infrastructure;
@@ -169,6 +172,51 @@ public static class DependencyInjection
 		return services;
 	}
 
+	public static IServiceCollection AddReceiptSearchIndexing(
+		this IServiceCollection services,
+		IConfiguration configuration)
+	{
+		services
+			.AddOptions<ReceiptSearchPreparationOptions>()
+			.Bind(configuration.GetSection(
+				ReceiptSearchPreparationOptions.SectionName))
+			.Validate(options =>
+				options.ChunkSize > 0 &&
+				options.ChunkOverlap >= 0 &&
+				options.ChunkOverlap < options.ChunkSize)
+			.ValidateOnStart();
+
+		services
+			.AddOptions<NvidiaEmbeddingsOptions>()
+			.Bind(configuration.GetSection(
+				NvidiaEmbeddingsOptions.SectionName))
+			.Validate(options =>
+				!string.IsNullOrWhiteSpace(options.Endpoint) &&
+				!string.IsNullOrWhiteSpace(options.Model) &&
+				options.Dimensions > 0 &&
+				options.BatchSize > 0)
+			.ValidateOnStart();
+
+		services
+			.AddOptions<TypesenseOptions>()
+			.Bind(configuration.GetSection(TypesenseOptions.SectionName))
+			.Validate(options =>
+				!string.IsNullOrWhiteSpace(options.Endpoint) &&
+				!string.IsNullOrWhiteSpace(options.CollectionName) &&
+				options.EmbeddingDimensions > 0)
+			.ValidateOnStart();
+
+		services.AddSingleton<
+			IReceiptSearchDocumentPreparer,
+			ReceiptSearchDocumentPreparer>();
+		services.AddHttpClient("NvidiaTextEmbeddingGenerator");
+		services.AddHttpClient("TypesenseSearchIndex");
+		services.AddScoped<ITextEmbeddingGenerator, NvidiaTextEmbeddingGenerator>();
+		services.AddScoped<ISearchIndex, TypesenseSearchIndex>();
+
+		return services;
+	}
+
 	public static IServiceCollection AddReceiptFlowMessaging(
 		this IServiceCollection services,
 		IConfiguration configuration,
@@ -217,6 +265,9 @@ public static class DependencyInjection
 					cfg.Message<ReceiptDocumentUploaded>(message =>
 						message.SetEntityName(
 							"receipt-document-uploaded"));
+					cfg.Message<ReceiptDocumentExtractionCompleted>(message =>
+						message.SetEntityName(
+							"receipt-document-extraction-completed"));
 					cfg.ConfigureEndpoints(context);
 				});
 			}
