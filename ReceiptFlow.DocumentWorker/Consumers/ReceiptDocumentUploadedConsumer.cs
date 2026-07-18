@@ -88,11 +88,10 @@ public sealed class ReceiptDocumentUploadedConsumer(
 			if (extraction is not null && HasSearchableContent(result))
 			{
 				await eventPublisher.PublishAsync(
-					new ReceiptDocumentExtractionCompleted(
+					new ReceiptDocumentExtractionCompletedV1(
 						Guid.NewGuid(),
 						document.Id,
 						document.ReceiptId!.Value,
-						document.OwnerUserId,
 						extraction.ExtractedAtUtc),
 					cancellationToken);
 			}

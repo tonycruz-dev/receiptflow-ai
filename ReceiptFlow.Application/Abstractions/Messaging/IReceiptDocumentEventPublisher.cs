@@ -9,6 +9,6 @@ public interface IReceiptDocumentEventPublisher
 		CancellationToken cancellationToken);
 
 	Task PublishAsync(
-		ReceiptDocumentExtractionCompleted message,
+		ReceiptDocumentExtractionCompletedV1 message,
 		CancellationToken cancellationToken);
 }

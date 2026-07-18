@@ -190,6 +190,8 @@ public sealed class NvidiaDocumentExtractorTests
 		var services = new ServiceCollection();
 		services.AddDocumentExtraction(configuration);
 		services.AddHttpClient("NvidiaDocumentExtractor")
+			.ConfigureAdditionalHttpMessageHandlers((handlers, _) =>
+				handlers.Clear())
 			.ConfigurePrimaryHttpMessageHandler(() => handler);
 
 		return services

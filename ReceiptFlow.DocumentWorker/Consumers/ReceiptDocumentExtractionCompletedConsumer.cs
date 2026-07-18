@@ -13,10 +13,10 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 	ITextEmbeddingGenerator embeddingGenerator,
 	ISearchIndex searchIndex,
 	ILogger<ReceiptDocumentExtractionCompletedConsumer> logger)
-	: IConsumer<ReceiptDocumentExtractionCompleted>
+	: IConsumer<ReceiptDocumentExtractionCompletedV1>
 {
 	public async Task Consume(
-		ConsumeContext<ReceiptDocumentExtractionCompleted> context)
+		ConsumeContext<ReceiptDocumentExtractionCompletedV1> context)
 	{
 		await HandleAsync(
 			context.Message,
@@ -24,7 +24,7 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 	}
 
 	public async Task HandleAsync(
-		ReceiptDocumentExtractionCompleted message,
+		ReceiptDocumentExtractionCompletedV1 message,
 		CancellationToken cancellationToken = default)
 	{
 		try
@@ -46,7 +46,7 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 	}
 
 	private async Task IndexAsync(
-		ReceiptDocumentExtractionCompleted message,
+		ReceiptDocumentExtractionCompletedV1 message,
 		CancellationToken cancellationToken)
 	{
 		var document = await dbContext.Documents
@@ -67,8 +67,7 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 			return;
 		}
 
-		if (document.OwnerUserId != document.Receipt.OwnerUserId ||
-			document.OwnerUserId != message.OwnerUserId)
+		if (document.OwnerUserId != document.Receipt.OwnerUserId)
 		{
 			throw new SearchIndexingException(
 				"Receipt document ownership did not match.",
@@ -93,6 +92,7 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 			document.Extraction.Subtotal ?? document.Receipt.SubtotalAmount,
 			document.Extraction.Tax ?? document.Receipt.TaxAmount,
 			document.Extraction.Total ?? document.Receipt.TotalAmount,
+			document.Extraction.ExtractedAtUtc,
 			document.Extraction.RawText,
 			document.Receipt.LineItems
 				.OrderBy(lineItem => lineItem.DisplayOrder)
@@ -120,7 +120,6 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 				isTransient: false);
 		}
 
-		var indexedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 		var documents = chunks
 			.Select((chunk, index) => new SearchIndexDocument(
 				chunk.Id,
@@ -131,18 +130,18 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 				chunk.Content,
 				source.MerchantName,
 				source.Category,
-				source.PurchaseDate?.ToUnixTimeSeconds(),
+				source.TransactionDate?.ToUnixTimeSeconds(),
 				source.Currency,
 				(double?)source.Total,
 				chunk.ContentChecksum,
-				indexedAt,
+				source.ExtractedAtUtc.ToUnixTimeSeconds(),
 				embeddings[index]))
 			.ToArray();
 
 		await searchIndex.UpsertAsync(documents, cancellationToken);
 		await searchIndex.DeleteObsoleteChunksAsync(
 			message.DocumentId,
-			message.OwnerUserId,
+			source.OwnerUserId,
 			documents.Select(document => document.Id).ToHashSet(),
 			cancellationToken);
 	}

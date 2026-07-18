@@ -88,7 +88,7 @@ public sealed class ReceiptDocumentExtractionTests
 		var message = Assert.Single(publisher.ExtractionCompletedMessages);
 		Assert.Equal(document.Id, message.DocumentId);
 		Assert.Equal(document.ReceiptId, message.ReceiptId);
-		Assert.Equal("user-a", message.OwnerUserId);
+		Assert.NotEqual(default, message.ExtractedAtUtc);
 	}
 
 	[Fact]
@@ -307,7 +307,7 @@ public sealed class ReceiptDocumentExtractionTests
 	private sealed class FakeReceiptDocumentEventPublisher
 		: IReceiptDocumentEventPublisher
 	{
-		public List<ReceiptDocumentExtractionCompleted> ExtractionCompletedMessages { get; } = [];
+		public List<ReceiptDocumentExtractionCompletedV1> ExtractionCompletedMessages { get; } = [];
 
 		public Task PublishAsync(
 			ReceiptDocumentUploaded message,
@@ -315,7 +315,7 @@ public sealed class ReceiptDocumentExtractionTests
 			Task.CompletedTask;
 
 		public Task PublishAsync(
-			ReceiptDocumentExtractionCompleted message,
+			ReceiptDocumentExtractionCompletedV1 message,
 			CancellationToken cancellationToken)
 		{
 			ExtractionCompletedMessages.Add(message);

@@ -32,9 +32,10 @@ consume API quota.
 ## RAG Indexing Foundation
 
 When extraction succeeds, the document worker publishes a
-`ReceiptDocumentExtractionCompleted` event. A second worker consumer loads the
+`ReceiptDocumentExtractionCompletedV1` event. A second worker consumer loads the
 owned receipt/document extraction, prepares deterministic text chunks, generates
-NVIDIA-hosted embeddings, and upserts owner-scoped chunks into Typesense.
+NVIDIA-hosted embeddings, and upserts owner-scoped chunks into the versioned
+Typesense collection. Tenant ownership is always read from PostgreSQL.
 Typesense data is derived and can be rebuilt from PostgreSQL.
 
 Aspire runs Typesense locally with a persistent development volume. Configure
@@ -48,7 +49,7 @@ the worker without committing secrets:
   "BatchSize": 16
 },
 "Typesense": {
-  "CollectionName": "receipt_chunks",
+  "CollectionName": "receipt_chunks_v1",
   "EmbeddingDimensions": 1024
 }
 ```

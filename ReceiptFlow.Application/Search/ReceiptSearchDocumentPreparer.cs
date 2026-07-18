@@ -21,10 +21,9 @@ public sealed partial class ReceiptSearchDocumentPreparer(
 			.Select((content, index) =>
 			{
 				var checksum = SearchChecksum.Sha256(content);
-				var shortChecksum = checksum[..16];
 
 				return new ReceiptSearchChunk(
-					$"{source.DocumentId}:{index}:{shortChecksum}",
+					$"{source.DocumentId}:{index}",
 					index,
 					content,
 					checksum);
@@ -39,7 +38,7 @@ public sealed partial class ReceiptSearchDocumentPreparer(
 		var summary = new List<string>();
 
 		Add(summary, source.MerchantName);
-		Add(summary, source.PurchaseDate?.ToString("yyyy-MM-dd"));
+		Add(summary, source.TransactionDate?.ToString("yyyy-MM-dd"));
 		Add(summary, source.Category);
 		Add(summary, source.Currency);
 		Add(summary, FormatMoney("Subtotal", source.Subtotal));

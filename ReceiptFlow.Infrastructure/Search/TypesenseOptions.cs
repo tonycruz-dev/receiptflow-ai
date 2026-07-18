@@ -8,7 +8,7 @@ public sealed class TypesenseOptions
 
 	public string? ApiKey { get; init; }
 
-	public string CollectionName { get; init; } = "receipt_chunks";
+	public string CollectionName { get; init; } = "receipt_chunks_v1";
 
 	public int EmbeddingDimensions { get; init; }
 }

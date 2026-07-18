@@ -18,7 +18,7 @@ internal sealed class MassTransitReceiptDocumentEventPublisher(
 	}
 
 	public Task PublishAsync(
-		ReceiptDocumentExtractionCompleted message,
+		ReceiptDocumentExtractionCompletedV1 message,
 		CancellationToken cancellationToken)
 	{
 		return publishEndpoint.Publish(

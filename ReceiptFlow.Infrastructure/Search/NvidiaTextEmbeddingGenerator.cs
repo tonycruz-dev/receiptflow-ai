@@ -140,9 +140,13 @@ internal sealed class NvidiaTextEmbeddingGenerator(
 
 	private void ValidateConfiguration()
 	{
-		if (string.IsNullOrWhiteSpace(options.Endpoint) ||
+		if (!Uri.TryCreate(options.Endpoint, UriKind.Absolute, out var endpoint) ||
+			endpoint.Scheme != Uri.UriSchemeHttps ||
+			options.Endpoint.StartsWith("__", StringComparison.Ordinal) ||
 			string.IsNullOrWhiteSpace(options.Model) ||
+			options.Model.StartsWith("__", StringComparison.Ordinal) ||
 			options.Dimensions <= 0 ||
+			options.BatchSize <= 0 ||
 			string.IsNullOrWhiteSpace(GetApiKey()))
 		{
 			throw new SearchIndexingException(
@@ -161,13 +165,16 @@ internal sealed class NvidiaTextEmbeddingGenerator(
 		var trimmed = endpoint.TrimEnd('/');
 
 		if (trimmed.EndsWith(
-			"/embeddings",
+			"/v1/embeddings",
 			StringComparison.OrdinalIgnoreCase))
 		{
 			return new Uri(trimmed);
 		}
 
-		return new Uri($"{trimmed}/embeddings");
+		if (trimmed.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+			return new Uri($"{trimmed}/embeddings");
+
+		return new Uri($"{trimmed}/v1/embeddings");
 	}
 
 	private static bool IsTransient(HttpStatusCode? statusCode)

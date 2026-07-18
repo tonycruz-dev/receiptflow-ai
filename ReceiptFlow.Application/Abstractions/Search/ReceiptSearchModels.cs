@@ -8,12 +8,13 @@ public sealed record ReceiptSearchSource(
 	Guid DocumentId,
 	string OwnerUserId,
 	string? MerchantName,
-	DateTimeOffset? PurchaseDate,
+	DateTimeOffset? TransactionDate,
 	string? Category,
 	string? Currency,
 	decimal? Subtotal,
 	decimal? Tax,
 	decimal? Total,
+	DateTimeOffset ExtractedAtUtc,
 	string? RawText,
 	IReadOnlyList<ReceiptSearchLineItem> LineItems);
 
@@ -39,11 +40,11 @@ public sealed record SearchIndexDocument(
 	string Content,
 	string? MerchantName,
 	string? Category,
-	long? PurchaseDate,
+	long? TransactionDate,
 	string? Currency,
 	double? Total,
 	string ContentChecksum,
-	long IndexedAt,
+	long ExtractedAtUtc,
 	IReadOnlyList<float> Embedding);
 
 public static class SearchChecksum

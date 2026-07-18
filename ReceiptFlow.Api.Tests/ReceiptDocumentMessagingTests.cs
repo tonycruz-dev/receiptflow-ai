@@ -282,7 +282,7 @@ public sealed class ReceiptDocumentMessagingTests
 		: IReceiptDocumentEventPublisher
 	{
 		public List<ReceiptDocumentUploaded> Messages { get; } = [];
-		public List<ReceiptDocumentExtractionCompleted> ExtractionCompletedMessages { get; } = [];
+		public List<ReceiptDocumentExtractionCompletedV1> ExtractionCompletedMessages { get; } = [];
 
 		public Task PublishAsync(
 			ReceiptDocumentUploaded message,
@@ -293,7 +293,7 @@ public sealed class ReceiptDocumentMessagingTests
 		}
 
 		public Task PublishAsync(
-			ReceiptDocumentExtractionCompleted message,
+			ReceiptDocumentExtractionCompletedV1 message,
 			CancellationToken cancellationToken)
 		{
 			ExtractionCompletedMessages.Add(message);

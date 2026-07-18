@@ -54,8 +54,12 @@ builder.AddProject<Projects.ReceiptFlow_Api>("receiptflow-api")
 	.WaitFor(messaging)
 	.WaitFor(keycloak);
 
+var nvidiaApiKey = builder.AddParameter("nvidia-api-key", secret: true);
+
 builder.AddProject<Projects.ReceiptFlow_DocumentWorker>(
 	"receiptflow-documentworker")
+	.WithEnvironment("Nvidia__ApiKey",	nvidiaApiKey)
+	.WithEnvironment("NvidiaEmbeddings__ApiKey", nvidiaApiKey)
 	.WithReference(receiptFlowDatabase)
 	.WithReference(blobs)
 	.WithReference(messaging)

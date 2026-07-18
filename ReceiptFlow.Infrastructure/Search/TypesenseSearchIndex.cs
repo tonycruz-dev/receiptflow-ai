@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 using ReceiptFlow.Application.Abstractions.Search;
 
@@ -63,6 +64,53 @@ internal sealed class TypesenseSearchIndex(
 			throw new SearchIndexingException(
 				"Typesense upsert failed.",
 				IsTransient(response.StatusCode));
+		}
+
+		await ValidateImportResponseAsync(response, cancellationToken);
+	}
+
+	private static async Task ValidateImportResponseAsync(
+		HttpResponseMessage response,
+		CancellationToken cancellationToken)
+	{
+		var content = await response.Content.ReadAsStringAsync(cancellationToken);
+		var lines = content.Split(
+			['\r', '\n'],
+			StringSplitOptions.RemoveEmptyEntries |
+			StringSplitOptions.TrimEntries);
+
+		if (lines.Length == 0)
+		{
+			throw new SearchIndexingException(
+				"Typesense upsert response was empty.",
+				isTransient: false);
+		}
+
+		try
+		{
+			var failures = lines
+				.Select(line => JsonSerializer.Deserialize<TypesenseImportResult>(
+					line,
+					JsonOptions))
+				.Where(result => result is null || !result.Success)
+				.ToArray();
+
+			if (failures.Length == 0)
+				return;
+
+			var isTransient = failures.All(result =>
+				result?.Code is int code && IsTransient((HttpStatusCode)code));
+
+			throw new SearchIndexingException(
+				"Typesense rejected one or more search documents.",
+				isTransient);
+		}
+		catch (JsonException exception)
+		{
+			throw new SearchIndexingException(
+				"Typesense upsert response was malformed.",
+				isTransient: false,
+				exception);
 		}
 	}
 
@@ -135,13 +183,20 @@ internal sealed class TypesenseSearchIndex(
 				.ReadFromJsonAsync<TypesenseCollectionSchema>(
 					JsonOptions,
 					cancellationToken);
-			var embeddingField = schema?.Fields
-				.SingleOrDefault(field => field.Name == "embedding");
+			var embeddingField = schema?.Fields.SingleOrDefault(field =>
+				field.Name == "embedding");
 
 			if (embeddingField?.NumDim != options.EmbeddingDimensions)
 			{
 				throw new SearchIndexingException(
 					"Existing Typesense schema embedding dimension is incompatible.",
+					isTransient: false);
+			}
+
+			if (schema is null || !IsCompatibleSchema(schema))
+			{
+				throw new SearchIndexingException(
+					"Existing Typesense collection schema is incompatible.",
 					isTransient: false);
 			}
 
@@ -151,6 +206,43 @@ internal sealed class TypesenseSearchIndex(
 		{
 			schemaLock.Release();
 		}
+		}
+
+	private bool IsCompatibleSchema(TypesenseCollectionSchema schema)
+	{
+		var expectedFields = new Dictionary<string, string>(StringComparer.Ordinal)
+		{
+			["owner_user_id"] = "string",
+			["receipt_id"] = "string",
+			["document_id"] = "string",
+			["chunk_index"] = "int32",
+			["content"] = "string",
+			["merchant_name"] = "string",
+			["category"] = "string",
+			["transaction_date"] = "int64",
+			["currency"] = "string",
+			["total"] = "float",
+			["content_checksum"] = "string",
+			["extracted_at"] = "int64",
+			["embedding"] = "float[]"
+		};
+
+		foreach (var expected in expectedFields)
+		{
+			var field = schema.Fields.SingleOrDefault(candidate =>
+				candidate.Name == expected.Key);
+
+			if (field?.Type != expected.Value)
+				return false;
+		}
+
+		var ownerField = schema.Fields.Single(field =>
+			field.Name == "owner_user_id");
+		var embeddingField = schema.Fields.Single(field =>
+			field.Name == "embedding");
+
+		return ownerField.Facet == true &&
+			embeddingField.NumDim == options.EmbeddingDimensions;
 	}
 
 	private async Task CreateCollectionAsync(CancellationToken cancellationToken)
@@ -168,11 +260,11 @@ internal sealed class TypesenseSearchIndex(
 				new { name = "content", type = "string" },
 				new { name = "merchant_name", type = "string", optional = true },
 				new { name = "category", type = "string", optional = true },
-				new { name = "purchase_date", type = "int64", optional = true },
+				new { name = "transaction_date", type = "int64", optional = true },
 				new { name = "currency", type = "string", facet = true, optional = true },
 				new { name = "total", type = "float", optional = true },
 				new { name = "content_checksum", type = "string" },
-				new { name = "indexed_at", type = "int64" },
+				new { name = "extracted_at", type = "int64" },
 				new
 				{
 					name = "embedding",
@@ -273,8 +365,12 @@ internal sealed class TypesenseSearchIndex(
 
 	private void ValidateConfiguration()
 	{
-		if (string.IsNullOrWhiteSpace(options.Endpoint) ||
+		if (!Uri.TryCreate(options.Endpoint, UriKind.Absolute, out var endpoint) ||
+			(endpoint.Scheme != Uri.UriSchemeHttp &&
+				endpoint.Scheme != Uri.UriSchemeHttps) ||
+			options.Endpoint.StartsWith("__", StringComparison.Ordinal) ||
 			string.IsNullOrWhiteSpace(options.CollectionName) ||
+			options.CollectionName.StartsWith("__", StringComparison.Ordinal) ||
 			options.EmbeddingDimensions <= 0 ||
 			string.IsNullOrWhiteSpace(GetApiKey()))
 		{
@@ -311,11 +407,11 @@ internal sealed class TypesenseSearchIndex(
 				content = document.Content,
 				merchant_name = document.MerchantName,
 				category = document.Category,
-				purchase_date = document.PurchaseDate,
+				transaction_date = document.TransactionDate,
 				currency = document.Currency,
 				total = document.Total,
 				content_checksum = document.ContentChecksum,
-				indexed_at = document.IndexedAt,
+				extracted_at = document.ExtractedAtUtc,
 				embedding = document.Embedding
 			},
 			JsonOptions);
@@ -326,6 +422,9 @@ internal sealed class TypesenseSearchIndex(
 
 	private sealed record TypesenseField(
 		string Name,
+		string Type,
+		bool? Facet,
+		[property: JsonPropertyName("num_dim")]
 		int? NumDim);
 
 	private sealed record TypesenseSearchResponse(
@@ -336,4 +435,8 @@ internal sealed class TypesenseSearchIndex(
 
 	private sealed record TypesenseDocument(
 		string Id);
+
+	private sealed record TypesenseImportResult(
+		bool Success,
+		int? Code);
 }

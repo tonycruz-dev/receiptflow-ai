@@ -1,8 +1,7 @@
 namespace ReceiptFlow.Contracts;
 
-public sealed record ReceiptDocumentExtractionCompleted(
+public sealed record ReceiptDocumentExtractionCompletedV1(
 	Guid EventId,
 	Guid DocumentId,
 	Guid ReceiptId,
-	string OwnerUserId,
 	DateTimeOffset ExtractedAtUtc);

@@ -1,10 +1,14 @@
+using System.Net;
 using Azure.Identity;
 using Azure.Storage.Blobs;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Timeout;
 using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Persistence;
 using ReceiptFlow.Application.Abstractions.Search;
@@ -153,17 +157,52 @@ public static class DependencyInjection
 		this IServiceCollection services,
 		IConfiguration configuration)
 	{
-		services
-			.AddOptions<NvidiaOptions>()
+		services.AddOptions<NvidiaOptions>()
 			.Bind(configuration.GetSection(NvidiaOptions.SectionName))
-			.Validate(options =>
-				!string.IsNullOrWhiteSpace(options.Endpoint) &&
-				!string.IsNullOrWhiteSpace(options.Model) &&
-				options.MaxPdfPages is > 0 and <= 25 &&
-				options.MinimumConfidence is >= 0 and <= 1)
+			.Validate(
+				options =>
+					Uri.TryCreate(options.Endpoint, UriKind.Absolute, out var uri) &&
+					uri.Scheme == Uri.UriSchemeHttps,
+				"Nvidia:Endpoint must be a valid absolute HTTPS URI.")
+			.Validate(
+				options =>
+					!string.IsNullOrWhiteSpace(options.Model) &&
+					!options.Model.StartsWith("__", StringComparison.Ordinal),
+				"Nvidia:Model must contain a real NVIDIA model ID.")
 			.ValidateOnStart();
 
-		services.AddHttpClient("NvidiaDocumentExtractor");
+		services.AddHttpClient("NvidiaDocumentExtractor")
+			.ConfigureHttpClient(client =>
+				client.Timeout = Timeout.InfiniteTimeSpan)
+			.ConfigureAdditionalHttpMessageHandlers((handlers, _) =>
+			{
+				for (var index = handlers.Count - 1; index >= 0; index--)
+				{
+					if (handlers[index] is ResilienceHandler)
+						handlers.RemoveAt(index);
+				}
+			})
+			.AddStandardResilienceHandler(options =>
+			{
+				options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(90);
+				options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
+				options.Retry.MaxRetryAttempts = 2;
+				options.Retry.Delay = TimeSpan.FromSeconds(2);
+				options.Retry.BackoffType = DelayBackoffType.Exponential;
+				options.Retry.UseJitter = false;
+				options.Retry.ShouldHandle =
+					new PredicateBuilder<HttpResponseMessage>()
+						.Handle<HttpRequestException>()
+						.Handle<TimeoutRejectedException>()
+						.HandleResult(response =>
+							response.StatusCode is HttpStatusCode.RequestTimeout ||
+							(int)response.StatusCode == 429 ||
+							(int)response.StatusCode >= 500);
+
+				// Standard resilience requires the circuit-breaker sampling
+				// duration to be at least twice the attempt timeout.
+				options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(3);
+			});
 
 		services.AddScoped<
 			Application.Abstractions.Extraction.IDocumentExtractor,
@@ -186,24 +225,61 @@ public static class DependencyInjection
 				options.ChunkOverlap < options.ChunkSize)
 			.ValidateOnStart();
 
-		services
-			.AddOptions<NvidiaEmbeddingsOptions>()
-			.Bind(configuration.GetSection(
-				NvidiaEmbeddingsOptions.SectionName))
-			.Validate(options =>
-				!string.IsNullOrWhiteSpace(options.Endpoint) &&
-				!string.IsNullOrWhiteSpace(options.Model) &&
-				options.Dimensions > 0 &&
-				options.BatchSize > 0)
-			.ValidateOnStart();
+		//services
+		//	.AddOptions<NvidiaEmbeddingsOptions>()
+		//	.Bind(configuration.GetSection(
+		//		NvidiaEmbeddingsOptions.SectionName))
+		//	.Validate(options =>
+		//		!string.IsNullOrWhiteSpace(options.Endpoint) &&
+		//		!string.IsNullOrWhiteSpace(options.Model) &&
+		//		options.Dimensions > 0 &&
+		//		options.BatchSize > 0)
+		//	.ValidateOnStart();
+
+		services.AddOptions<NvidiaEmbeddingsOptions>()
+				.Bind(configuration.GetSection(NvidiaEmbeddingsOptions.SectionName))
+			.Validate(
+				options =>
+					Uri.TryCreate(options.Endpoint, UriKind.Absolute, out var uri) &&
+					uri.Scheme == Uri.UriSchemeHttps,
+			"NvidiaEmbeddings:Endpoint must be a valid absolute HTTPS URI.")
+			.Validate(
+					options =>
+						!string.IsNullOrWhiteSpace(options.Model) &&
+						!options.Model.StartsWith("__", StringComparison.Ordinal),
+					"NvidiaEmbeddings:Model must contain a real NVIDIA embedding model ID.")
+				.Validate(
+					options => options.Dimensions > 0,
+					"NvidiaEmbeddings:Dimensions must be greater than zero.")
+				.Validate(
+					options => options.BatchSize > 0,
+					"NvidiaEmbeddings:BatchSize must be greater than zero.")
+				.ValidateOnStart();
 
 		services
 			.AddOptions<TypesenseOptions>()
 			.Bind(configuration.GetSection(TypesenseOptions.SectionName))
-			.Validate(options =>
-				!string.IsNullOrWhiteSpace(options.Endpoint) &&
-				!string.IsNullOrWhiteSpace(options.CollectionName) &&
-				options.EmbeddingDimensions > 0)
+			.Validate(
+				options =>
+					Uri.TryCreate(options.Endpoint, UriKind.Absolute, out var uri) &&
+					(uri.Scheme == Uri.UriSchemeHttp ||
+						uri.Scheme == Uri.UriSchemeHttps) &&
+					!options.Endpoint.StartsWith("__", StringComparison.Ordinal),
+				"Typesense:Endpoint must be a valid absolute HTTP or HTTPS URI.")
+			.Validate(
+				options =>
+					!string.IsNullOrWhiteSpace(options.CollectionName) &&
+					!options.CollectionName.StartsWith("__", StringComparison.Ordinal),
+				"Typesense:CollectionName must contain a real collection name.")
+			.Validate(
+				options => options.EmbeddingDimensions > 0,
+				"Typesense:EmbeddingDimensions must be greater than zero.")
+			.Validate(
+				options =>
+					!string.IsNullOrWhiteSpace(options.ApiKey) ||
+					!string.IsNullOrWhiteSpace(
+						Environment.GetEnvironmentVariable("TYPESENSE_API_KEY")),
+				"Typesense:ApiKey is required.")
 			.ValidateOnStart();
 
 		services.AddSingleton<
@@ -265,9 +341,9 @@ public static class DependencyInjection
 					cfg.Message<ReceiptDocumentUploaded>(message =>
 						message.SetEntityName(
 							"receipt-document-uploaded"));
-					cfg.Message<ReceiptDocumentExtractionCompleted>(message =>
+					cfg.Message<ReceiptDocumentExtractionCompletedV1>(message =>
 						message.SetEntityName(
-							"receipt-document-extraction-completed"));
+							"receipt-document-extraction-completed-v1"));
 					cfg.ConfigureEndpoints(context);
 				});
 			}

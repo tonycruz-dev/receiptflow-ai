@@ -64,6 +64,7 @@ public sealed class ReceiptSearchIndexingTests
 				null,
 				null,
 				null,
+				DateTimeOffset.UtcNow,
 				"   \r\n\t",
 				[]));
 		var repeatedLine = new string('a', 70);
@@ -74,6 +75,22 @@ public sealed class ReceiptSearchIndexingTests
 		Assert.Empty(empty);
 		Assert.True(chunks.Count > 1);
 		Assert.Contains($"{repeatedLine}2", chunks[1].Content);
+	}
+
+	[Fact]
+	public void Preparer_IncludesReceiptSummaryAndLineItems()
+	{
+		var content = Assert.Single(
+			CreatePreparer().Prepare(CreateSource("Original extracted text"))).Content;
+
+		Assert.Contains("Corner Shop", content);
+		Assert.Contains("Groceries", content);
+		Assert.Contains("GBP", content);
+		Assert.Contains("Subtotal 10", content);
+		Assert.Contains("Tax 2", content);
+		Assert.Contains("Total 12", content);
+		Assert.Contains("Milk quantity 1 unit 2 total 2", content);
+		Assert.Contains("Original extracted text", content);
 	}
 
 	[Fact]
@@ -98,20 +115,52 @@ public sealed class ReceiptSearchIndexingTests
 			2,
 			handler.Requests.Count(request =>
 				request.Method == HttpMethod.Post &&
-				request.Path.EndsWith("/embeddings", StringComparison.Ordinal)));
+				request.Path == "/v1/embeddings"));
 	}
 
 	[Fact]
 	public async Task NvidiaEmbeddings_DimensionMismatchFailsSafely()
 	{
 		var handler = new CapturingHttpHandler(_ =>
-			JsonResponse("""{"data":[{"index":0,"embedding":[0.1,0.2]}]}"""));
-		var generator = CreateEmbeddingGenerator(handler);
+			JsonResponse(JsonSerializer.Serialize(new
+			{
+				data = new[]
+				{
+					new
+					{
+						index = 0,
+						embedding = Enumerable.Repeat(0.1f, 1023).ToArray()
+					}
+				}
+			})));
+		var generator = CreateEmbeddingGenerator(handler, dimensions: 1024);
 
 		var exception = await Assert.ThrowsAsync<SearchIndexingException>(
 			() => generator.GenerateAsync(["one"]));
 
 		Assert.False(exception.IsTransient);
+	}
+
+	[Fact]
+	public async Task NvidiaEmbeddings_AcceptsExactly1024Dimensions()
+	{
+		var handler = new CapturingHttpHandler(_ =>
+			JsonResponse(JsonSerializer.Serialize(new
+			{
+				data = new[]
+				{
+					new
+					{
+						index = 0,
+						embedding = Enumerable.Repeat(0.1f, 1024).ToArray()
+					}
+				}
+			})));
+		var generator = CreateEmbeddingGenerator(handler, dimensions: 1024);
+
+		var embedding = Assert.Single(await generator.GenerateAsync(["one"]));
+
+		Assert.Equal(1024, embedding.Count);
 	}
 
 	[Fact]
@@ -122,15 +171,22 @@ public sealed class ReceiptSearchIndexingTests
 		var searchIndex = new CapturingSearchIndex();
 		var consumer = CreateConsumer(dbContext, searchIndex: searchIndex);
 
-		await consumer.HandleAsync(CreateMessage(document, "user-a"));
+		await consumer.HandleAsync(CreateMessage(document));
 
 		var indexed = Assert.Single(searchIndex.Upserts);
+		var extractedAtUtc = await dbContext.DocumentExtractions
+			.Where(extraction => extraction.DocumentId == document.Id)
+			.Select(extraction => extraction.ExtractedAtUtc)
+			.SingleAsync();
 		Assert.All(indexed, item =>
 		{
 			Assert.Equal("user-a", item.OwnerUserId);
 			Assert.Equal(document.Id, item.DocumentId);
 			Assert.Equal(document.ReceiptId, item.ReceiptId);
 			Assert.Equal(3, item.Embedding.Count);
+			Assert.Equal(
+				extractedAtUtc.ToUnixTimeSeconds(),
+				item.ExtractedAtUtc);
 		});
 		Assert.Single(searchIndex.DeleteCalls);
 	}
@@ -142,7 +198,7 @@ public sealed class ReceiptSearchIndexingTests
 		var document = AddCompletedDocument(dbContext, "user-a");
 		var searchIndex = new CapturingSearchIndex();
 		var consumer = CreateConsumer(dbContext, searchIndex: searchIndex);
-		var message = CreateMessage(document, "user-a");
+		var message = CreateMessage(document);
 
 		await consumer.HandleAsync(message);
 		await consumer.HandleAsync(message);
@@ -155,14 +211,45 @@ public sealed class ReceiptSearchIndexingTests
 	}
 
 	[Fact]
-	public async Task ExtractionCompletedConsumer_OwnerMismatchIsSkipped()
+	public async Task ExtractionCompletedConsumer_MissingDocumentIsIgnored()
 	{
 		await using var dbContext = CreateDbContext();
-		var document = AddCompletedDocument(dbContext, "user-a");
 		var searchIndex = new CapturingSearchIndex();
 		var consumer = CreateConsumer(dbContext, searchIndex: searchIndex);
 
-		await consumer.HandleAsync(CreateMessage(document, "user-b"));
+		await consumer.HandleAsync(new ReceiptDocumentExtractionCompletedV1(
+			Guid.NewGuid(),
+			Guid.NewGuid(),
+			Guid.NewGuid(),
+			DateTimeOffset.UtcNow));
+
+		Assert.Empty(searchIndex.Upserts);
+		Assert.Empty(searchIndex.DeleteCalls);
+	}
+
+	[Fact]
+	public async Task ExtractionCompletedConsumer_IncompleteDocumentIsIgnored()
+	{
+		await using var dbContext = CreateDbContext();
+		var receipt = new Receipt(
+			"user-a",
+			"Corner Shop",
+			DateTimeOffset.UtcNow.AddDays(-1),
+			12.50m);
+		var document = new Document(
+			"user-a",
+			"receipt.jpg",
+			"generated/storage-key",
+			"image/jpeg",
+			123,
+			DocumentType.ReceiptImage);
+		receipt.AddDocument(document);
+		dbContext.Receipts.Add(receipt);
+		await dbContext.SaveChangesAsync();
+		var searchIndex = new CapturingSearchIndex();
+		var consumer = CreateConsumer(dbContext, searchIndex: searchIndex);
+
+		await consumer.HandleAsync(CreateMessage(document));
 
 		Assert.Empty(searchIndex.Upserts);
 		Assert.Empty(searchIndex.DeleteCalls);
@@ -182,7 +269,23 @@ public sealed class ReceiptSearchIndexingTests
 		var consumer = CreateConsumer(dbContext, searchIndex: searchIndex);
 
 		await Assert.ThrowsAsync<SearchIndexingException>(
-			() => consumer.HandleAsync(CreateMessage(document, "user-a")));
+			() => consumer.HandleAsync(CreateMessage(document)));
+	}
+
+	[Fact]
+	public async Task ExtractionCompletedConsumer_PermanentIndexFailureIsNotRetried()
+	{
+		await using var dbContext = CreateDbContext();
+		var document = AddCompletedDocument(dbContext, "user-a");
+		var searchIndex = new CapturingSearchIndex
+		{
+			UpsertException = new SearchIndexingException(
+				"invalid index request",
+				isTransient: false)
+		};
+		var consumer = CreateConsumer(dbContext, searchIndex: searchIndex);
+
+		await consumer.HandleAsync(CreateMessage(document));
 	}
 
 	[Fact]
@@ -191,7 +294,7 @@ public sealed class ReceiptSearchIndexingTests
 		var handler = new CapturingHttpHandler(request =>
 		{
 			if (request.Method == HttpMethod.Get &&
-				request.RequestUri!.AbsolutePath == "/collections/receipt_chunks")
+				request.RequestUri!.AbsolutePath == "/collections/receipt_chunks_v1")
 			{
 				return new HttpResponseMessage(HttpStatusCode.NotFound);
 			}
@@ -205,7 +308,10 @@ public sealed class ReceiptSearchIndexingTests
 			if (request.Method == HttpMethod.Post &&
 				request.RequestUri!.AbsolutePath.EndsWith("/documents/import", StringComparison.Ordinal))
 			{
-				return new HttpResponseMessage(HttpStatusCode.OK);
+				return new HttpResponseMessage(HttpStatusCode.OK)
+				{
+					Content = new StringContent("{\"success\":true}")
+				};
 			}
 
 			if (request.Method == HttpMethod.Get &&
@@ -251,20 +357,103 @@ public sealed class ReceiptSearchIndexingTests
 		var fields = schema.RootElement.GetProperty("fields").EnumerateArray();
 		var embedding = fields.Single(field =>
 			field.GetProperty("name").GetString() == "embedding");
+		var owner = fields.Single(field =>
+			field.GetProperty("name").GetString() == "owner_user_id");
 		Assert.Equal("float[]", embedding.GetProperty("type").GetString());
 		Assert.Equal(3, embedding.GetProperty("num_dim").GetInt32());
+		Assert.True(owner.GetProperty("facet").GetBoolean());
+		Assert.Contains(fields, field =>
+			field.GetProperty("name").GetString() == "transaction_date");
+		Assert.Contains(fields, field =>
+			field.GetProperty("name").GetString() == "extracted_at");
 
 		var importBody = Assert.Single(
 			handler.Requests,
 			request => request.Method == HttpMethod.Post &&
 				request.Path.EndsWith("/documents/import", StringComparison.Ordinal)).Body;
 		Assert.Contains("\"owner_user_id\":\"user-a\"", importBody);
+		Assert.Contains("\"extracted_at\":", importBody);
 		Assert.Contains("\"embedding\":[0.1,0.2,0.3]", importBody);
+		Assert.Equal(
+			"?action=upsert",
+			Assert.Single(handler.Requests, request =>
+				request.Method == HttpMethod.Post &&
+				request.Path.EndsWith("/documents/import", StringComparison.Ordinal)).Query);
 
 		Assert.Contains(
 			handler.Requests,
 			request => request.Method == HttpMethod.Delete &&
 				request.Path.EndsWith("/documents/old-chunk", StringComparison.Ordinal));
+	}
+
+	[Fact]
+	public async Task TypesenseIndex_IncompatibleExistingDimensionFailsWithoutDeletingCollection()
+	{
+		var handler = new CapturingHttpHandler(request =>
+		{
+			if (request.Method == HttpMethod.Get &&
+				request.RequestUri!.AbsolutePath == "/collections/receipt_chunks_v1")
+			{
+				return JsonResponse(
+					"""
+					{"fields":[{"name":"embedding","type":"float[]","num_dim":768}]}
+					""");
+			}
+
+			return new HttpResponseMessage(HttpStatusCode.BadRequest);
+		});
+		var services = new ServiceCollection();
+		services.AddReceiptSearchIndexing(CreateSearchConfiguration());
+		services.RemoveAll<IHttpClientFactory>();
+		services.AddSingleton<IHttpClientFactory>(
+			new SingleClientFactory(new HttpClient(handler)));
+		using var provider = services.BuildServiceProvider();
+		var index = provider.GetRequiredService<ISearchIndex>();
+
+		var exception = await Assert.ThrowsAsync<SearchIndexingException>(
+			() => index.UpsertAsync([CreateSearchIndexDocument()]));
+
+		Assert.False(exception.IsTransient);
+		Assert.DoesNotContain(
+			handler.Requests,
+			request => request.Method == HttpMethod.Delete);
+	}
+
+	[Theory]
+	[InlineData(400, false)]
+	[InlineData(408, true)]
+	[InlineData(429, true)]
+	[InlineData(503, true)]
+	public async Task TypesenseIndex_ClassifiesImportFailures(
+		int statusCode,
+		bool expectedTransient)
+	{
+		var handler = new CapturingHttpHandler(request =>
+		{
+			if (request.Method == HttpMethod.Get)
+				return new HttpResponseMessage(HttpStatusCode.NotFound);
+
+			if (request.RequestUri!.AbsolutePath == "/collections")
+				return new HttpResponseMessage(HttpStatusCode.OK);
+
+			return new HttpResponseMessage(HttpStatusCode.OK)
+			{
+				Content = new StringContent(
+					$$"""{"success":false,"code":{{statusCode}}}""")
+			};
+		});
+		var services = new ServiceCollection();
+		services.AddReceiptSearchIndexing(CreateSearchConfiguration());
+		services.RemoveAll<IHttpClientFactory>();
+		services.AddSingleton<IHttpClientFactory>(
+			new SingleClientFactory(new HttpClient(handler)));
+		using var provider = services.BuildServiceProvider();
+		var index = provider.GetRequiredService<ISearchIndex>();
+
+		var exception = await Assert.ThrowsAsync<SearchIndexingException>(
+			() => index.UpsertAsync([CreateSearchIndexDocument()]));
+
+		Assert.Equal(expectedTransient, exception.IsTransient);
 	}
 
 	private static ReceiptDocumentExtractionCompletedConsumer CreateConsumer(
@@ -292,11 +481,12 @@ public sealed class ReceiptSearchIndexingTests
 
 	private static ITextEmbeddingGenerator CreateEmbeddingGenerator(
 		CapturingHttpHandler handler,
-		int batchSize = 16)
+		int batchSize = 16,
+		int dimensions = 3)
 	{
 		var services = new ServiceCollection();
 		services.AddReceiptSearchIndexing(
-			CreateSearchConfiguration(batchSize));
+			CreateSearchConfiguration(batchSize, dimensions));
 		services.RemoveAll<IHttpClientFactory>();
 		services.AddSingleton<IHttpClientFactory>(
 			new SingleClientFactory(new HttpClient(handler)
@@ -362,14 +552,12 @@ public sealed class ReceiptSearchIndexingTests
 		return document;
 	}
 
-	private static ReceiptDocumentExtractionCompleted CreateMessage(
-		Document document,
-		string ownerUserId) =>
+	private static ReceiptDocumentExtractionCompletedV1 CreateMessage(
+		Document document) =>
 		new(
 			Guid.NewGuid(),
 			document.Id,
 			document.ReceiptId!.Value,
-			ownerUserId,
 			DateTimeOffset.UtcNow);
 
 	private static ReceiptSearchSource CreateSource(string rawText) =>
@@ -384,6 +572,7 @@ public sealed class ReceiptSearchIndexingTests
 			10m,
 			2m,
 			12m,
+			DateTimeOffset.UtcNow,
 			rawText,
 			[
 				new ReceiptSearchLineItem("Milk", 1, 2, 2, null)
@@ -394,7 +583,7 @@ public sealed class ReceiptSearchIndexingTests
 		var documentId = Guid.NewGuid();
 
 		return new SearchIndexDocument(
-			$"{documentId}:0:abc",
+			$"{documentId}:0",
 			"user-a",
 			Guid.NewGuid(),
 			documentId,
@@ -411,7 +600,8 @@ public sealed class ReceiptSearchIndexingTests
 	}
 
 	private static IConfiguration CreateSearchConfiguration(
-		int embeddingBatchSize = 16) =>
+		int embeddingBatchSize = 16,
+		int dimensions = 3) =>
 		new ConfigurationBuilder()
 			.AddInMemoryCollection(
 				new Dictionary<string, string?>
@@ -420,13 +610,13 @@ public sealed class ReceiptSearchIndexingTests
 					["ReceiptSearch:ChunkOverlap"] = "150",
 					["NvidiaEmbeddings:Endpoint"] = "https://nim.test/v1",
 					["NvidiaEmbeddings:Model"] = "test-model",
-					["NvidiaEmbeddings:Dimensions"] = "3",
+					["NvidiaEmbeddings:Dimensions"] = dimensions.ToString(),
 					["NvidiaEmbeddings:BatchSize"] = embeddingBatchSize.ToString(),
 					["NvidiaEmbeddings:ApiKey"] = "test-key",
 					["Typesense:Endpoint"] = "http://typesense.test",
 					["Typesense:ApiKey"] = "test-key",
-					["Typesense:CollectionName"] = "receipt_chunks",
-					["Typesense:EmbeddingDimensions"] = "3"
+					["Typesense:CollectionName"] = "receipt_chunks_v1",
+					["Typesense:EmbeddingDimensions"] = dimensions.ToString()
 				})
 			.Build();
 
@@ -506,6 +696,7 @@ public sealed class ReceiptSearchIndexingTests
 				new CapturedRequest(
 					request.Method,
 					request.RequestUri!.AbsolutePath,
+					request.RequestUri.Query,
 					body));
 
 			return responder(request);
@@ -515,5 +706,6 @@ public sealed class ReceiptSearchIndexingTests
 	private sealed record CapturedRequest(
 		HttpMethod Method,
 		string Path,
+		string Query,
 		string Body);
 }
