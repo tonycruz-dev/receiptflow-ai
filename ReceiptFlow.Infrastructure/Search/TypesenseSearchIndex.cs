@@ -53,8 +53,8 @@ internal sealed class TypesenseSearchIndex(
 				{
 					collection = options.CollectionName,
 					q = query.Query,
-					query_by = "content,merchant_name,category,currency,embedding",
-					query_by_weights = "5,3,2,1,0",
+					query_by = "content,merchant_name,category,currency",
+					query_by_weights = "5,3,2,1",
 					vector_query = $"embedding:([{vector}], alpha: 0.5)",
 					filter_by = BuildOwnerFilter(query.OwnerUserId),
 					sort_by = "_text_match:desc",
@@ -105,7 +105,19 @@ internal sealed class TypesenseSearchIndex(
 
 		var result = payload.Results[0];
 
-		if (result.Hits is null)
+		if (result.Code is not null ||
+			!string.IsNullOrWhiteSpace(result.Error))
+		{
+			var statusCode = result.Code is > 0 ? result.Code.Value : 400;
+
+			throw new SearchIndexingException(
+				$"Typesense receipt search was rejected: {SafeError(result.Error)}",
+				IsTransient((HttpStatusCode)statusCode),
+				component: "Typesense search",
+				httpStatusCode: statusCode);
+		}
+
+		if (result.Found is null || result.Hits is null)
 		{
 			throw new SearchIndexingException(
 				"Typesense receipt search response was incomplete.",
@@ -115,7 +127,7 @@ internal sealed class TypesenseSearchIndex(
 		try
 		{
 			return new SearchIndexPage(
-				result.Found,
+				result.Found.Value,
 				result.Hits.Select(ToSearchIndexMatch).ToArray());
 		}
 		catch (Exception exception)
@@ -513,14 +525,25 @@ internal sealed class TypesenseSearchIndex(
 	private static SearchIndexMatch ToSearchIndexMatch(TypesenseSearchHit hit)
 	{
 		var document = hit.Document;
-		var relevance = hit.TextMatch ??
+
+		if (document is null ||
+			!Guid.TryParse(document.ReceiptId, out var receiptId) ||
+			!Guid.TryParse(document.DocumentId, out var documentId) ||
+			document.Content is null)
+		{
+			throw new FormatException(
+				"A Typesense receipt search hit contained invalid required fields.");
+		}
+
+		var relevance = hit.HybridSearchInfo?.RankFusionScore ??
+			hit.TextMatch ??
 			(hit.VectorDistance is double distance
 				? 1d / (1d + distance)
 				: 0d);
 
 		return new SearchIndexMatch(
-			Guid.Parse(document.ReceiptId),
-			Guid.Parse(document.DocumentId),
+			receiptId,
+			documentId,
 			document.ChunkIndex,
 			document.MerchantName,
 			document.TransactionDate is long transactionDate
@@ -531,6 +554,19 @@ internal sealed class TypesenseSearchIndex(
 			document.Total,
 			document.Content,
 			relevance);
+	}
+
+	private static string SafeError(string? error)
+	{
+		if (string.IsNullOrWhiteSpace(error))
+			return "no safe error detail was provided";
+
+		var safe = error
+			.Replace('\r', ' ')
+			.Replace('\n', ' ')
+			.Trim();
+
+		return safe.Length <= 500 ? safe : safe[..500];
 	}
 
 	private static string ToTypesenseDocumentJson(
@@ -571,27 +607,38 @@ internal sealed class TypesenseSearchIndex(
 		IReadOnlyList<TypesenseHit> Hits);
 
 	private sealed record TypesenseMultiSearchResponse(
-		IReadOnlyList<TypesenseSearchResult> Results);
+		[property: JsonPropertyName("results")]
+		IReadOnlyList<TypesenseSearchResult>? Results);
 
 	private sealed record TypesenseSearchResult(
-		long Found,
-		IReadOnlyList<TypesenseSearchHit> Hits);
+		[property: JsonPropertyName("found")] long? Found,
+		[property: JsonPropertyName("hits")]
+		IReadOnlyList<TypesenseSearchHit>? Hits,
+		[property: JsonPropertyName("code")] int? Code,
+		[property: JsonPropertyName("error")] string? Error);
 
 	private sealed record TypesenseSearchHit(
-		TypesenseReceiptDocument Document,
+		[property: JsonPropertyName("document")]
+		TypesenseReceiptDocument? Document,
 		[property: JsonPropertyName("text_match")] double? TextMatch,
-		[property: JsonPropertyName("vector_distance")] double? VectorDistance);
+		[property: JsonPropertyName("vector_distance")] double? VectorDistance,
+		[property: JsonPropertyName("hybrid_search_info")]
+		TypesenseHybridSearchInfo? HybridSearchInfo);
+
+	private sealed record TypesenseHybridSearchInfo(
+		[property: JsonPropertyName("rank_fusion_score")]
+		double? RankFusionScore);
 
 	private sealed record TypesenseReceiptDocument(
-		[property: JsonPropertyName("receipt_id")] string ReceiptId,
-		[property: JsonPropertyName("document_id")] string DocumentId,
+		[property: JsonPropertyName("receipt_id")] string? ReceiptId,
+		[property: JsonPropertyName("document_id")] string? DocumentId,
 		[property: JsonPropertyName("chunk_index")] int ChunkIndex,
 		[property: JsonPropertyName("merchant_name")] string? MerchantName,
 		[property: JsonPropertyName("transaction_date")] long? TransactionDate,
-		string? Category,
-		string? Currency,
-		double? Total,
-		string Content);
+		[property: JsonPropertyName("category")] string? Category,
+		[property: JsonPropertyName("currency")] string? Currency,
+		[property: JsonPropertyName("total")] double? Total,
+		[property: JsonPropertyName("content")] string? Content);
 
 	private sealed record TypesenseHit(
 		TypesenseDocument Document);

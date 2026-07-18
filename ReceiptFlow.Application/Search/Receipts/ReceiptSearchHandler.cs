@@ -27,6 +27,7 @@ public sealed class ReceiptSearchHandler(
 
 		var generated = await embeddingGenerator.GenerateAsync(
 			[query],
+			EmbeddingInputType.Query,
 			cancellationToken);
 		var embedding = generated.Count == 1 ? generated[0] : null;
 

@@ -19,6 +19,7 @@ internal sealed class NvidiaTextEmbeddingGenerator(
 
 	public async Task<IReadOnlyList<IReadOnlyList<float>>> GenerateAsync(
 		IReadOnlyList<string> texts,
+		EmbeddingInputType inputType,
 		CancellationToken cancellationToken = default)
 	{
 		if (texts.Count == 0)
@@ -38,6 +39,7 @@ internal sealed class NvidiaTextEmbeddingGenerator(
 
 			embeddings.AddRange(await GenerateBatchAsync(
 				batch,
+				inputType,
 				cancellationToken));
 		}
 
@@ -46,6 +48,7 @@ internal sealed class NvidiaTextEmbeddingGenerator(
 
 	private async Task<IReadOnlyList<IReadOnlyList<float>>> GenerateBatchAsync(
 		IReadOnlyList<string> texts,
+		EmbeddingInputType inputType,
 		CancellationToken cancellationToken)
 	{
 		using var request = new HttpRequestMessage(
@@ -57,6 +60,9 @@ internal sealed class NvidiaTextEmbeddingGenerator(
 				{
 					model = options.Model,
 					input = texts,
+					input_type = inputType == EmbeddingInputType.Query
+						? "query"
+						: "passage",
 					dimensions = options.Dimensions
 				},
 				options: JsonOptions)
@@ -75,11 +81,7 @@ internal sealed class NvidiaTextEmbeddingGenerator(
 				cancellationToken);
 
 			if (!response.IsSuccessStatusCode)
-			{
-				throw new SearchIndexingException(
-					"NVIDIA embedding request was rejected.",
-					IsTransient(response.StatusCode));
-			}
+				throw await CreateRejectedExceptionAsync(response, cancellationToken);
 
 			var payload = await response.Content
 				.ReadFromJsonAsync<EmbeddingResponse>(
@@ -136,6 +138,120 @@ internal sealed class NvidiaTextEmbeddingGenerator(
 				isTransient: false,
 				exception);
 		}
+	}
+
+	private static async Task<SearchIndexingException> CreateRejectedExceptionAsync(
+		HttpResponseMessage response,
+		CancellationToken cancellationToken)
+	{
+		var safeProviderError = await ReadSafeProviderErrorAsync(
+			response,
+			cancellationToken);
+		var requestId = GetProviderRequestId(response);
+		var message = safeProviderError is null
+			? "NVIDIA embedding request was rejected."
+			: $"NVIDIA embedding request was rejected: {safeProviderError}";
+
+		return new SearchIndexingException(
+			message,
+			IsTransient(response.StatusCode),
+			component: "NVIDIA embeddings",
+			httpStatusCode: (int)response.StatusCode,
+			providerRequestId: requestId);
+	}
+
+	private static async Task<string?> ReadSafeProviderErrorAsync(
+		HttpResponseMessage response,
+		CancellationToken cancellationToken)
+	{
+		try
+		{
+			await using var content = await response.Content.ReadAsStreamAsync(
+				cancellationToken);
+			using var payload = await JsonDocument.ParseAsync(
+				content,
+				cancellationToken: cancellationToken);
+			var root = payload.RootElement;
+
+			if (TryGetString(root, "message", out var message))
+				return Limit(message);
+
+			if (root.TryGetProperty("error", out var error) &&
+				TryGetString(error, "message", out message))
+			{
+				return Limit(message);
+			}
+
+			if (root.TryGetProperty("detail", out var detail))
+			{
+				if (detail.ValueKind == JsonValueKind.String)
+					return Limit(detail.GetString());
+
+				if (detail.ValueKind == JsonValueKind.Array)
+				{
+					var details = detail.EnumerateArray()
+						.Select(item => TryGetString(item, "msg", out var itemMessage)
+							? itemMessage
+							: null)
+						.Where(item => !string.IsNullOrWhiteSpace(item))
+						.Take(3)
+						.ToArray();
+
+					return details.Length == 0
+						? null
+						: Limit(string.Join("; ", details));
+				}
+			}
+		}
+		catch (JsonException)
+		{
+			// Provider bodies are intentionally not retained when they are not
+			// recognized as a safe structured error.
+		}
+
+		return null;
+	}
+
+	private static bool TryGetString(
+		JsonElement element,
+		string propertyName,
+		out string? value)
+	{
+		value = null;
+
+		if (element.ValueKind != JsonValueKind.Object ||
+			!element.TryGetProperty(propertyName, out var property) ||
+			property.ValueKind != JsonValueKind.String)
+		{
+			return false;
+		}
+
+		value = property.GetString();
+		return !string.IsNullOrWhiteSpace(value);
+	}
+
+	private static string? Limit(string? value) =>
+		string.IsNullOrWhiteSpace(value)
+			? null
+			: value.Length <= 500
+				? value
+				: value[..500];
+
+	private static string? GetProviderRequestId(HttpResponseMessage response)
+	{
+		foreach (var header in new[]
+			{
+				"x-request-id",
+				"nv-request-id",
+				"request-id",
+				"x-correlation-id"
+			})
+		{
+			if (response.Headers.TryGetValues(header, out var values))
+				return values.FirstOrDefault();
+		}
+
+		return null;
 	}
 
 	private void ValidateConfiguration()

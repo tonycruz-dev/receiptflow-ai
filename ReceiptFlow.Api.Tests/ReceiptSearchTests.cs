@@ -101,6 +101,25 @@ public sealed class ReceiptSearchTests
 	}
 
 	[Fact]
+	public async Task Endpoint_Returns200ForEmptySearchResult()
+	{
+		await using var factory = CreateApiFactory(
+			new FixedEmbeddingGenerator(),
+			new CapturingSearchIndex());
+		using var client = CreateAuthenticatedClient(factory, "user-b");
+
+		var response = await client.PostAsJsonAsync(
+			"/api/search/receipts",
+			new ReceiptSearchRequest("usb cables"));
+		var result = await response.Content.ReadFromJsonAsync<ReceiptSearchResponse>();
+
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		Assert.NotNull(result);
+		Assert.Equal(0, result.Total);
+		Assert.Empty(result.Matches);
+	}
+
+	[Fact]
 	public async Task Handler_PropagatesCallerCancellationToken()
 	{
 		var embeddings = new FixedEmbeddingGenerator();
@@ -115,6 +134,7 @@ public sealed class ReceiptSearchTests
 			cancellation.Token);
 
 		Assert.Equal(cancellation.Token, embeddings.LastCancellationToken);
+		Assert.Equal(EmbeddingInputType.Query, embeddings.LastInputType);
 		Assert.Equal(cancellation.Token, index.LastCancellationToken);
 	}
 
@@ -199,8 +219,9 @@ public sealed class ReceiptSearchTests
 		Assert.Equal(
 			"owner_user_id:=`bob\\`tenant\\\\id`",
 			search.GetProperty("filter_by").GetString());
-		Assert.Contains("content", search.GetProperty("query_by").GetString());
-		Assert.Contains("merchant_name", search.GetProperty("query_by").GetString());
+		Assert.Equal(
+			"content,merchant_name,category,currency",
+			search.GetProperty("query_by").GetString());
 		Assert.Contains("embedding:([", search.GetProperty("vector_query").GetString());
 		Assert.Equal(
 			"embedding,owner_user_id,content_checksum,extracted_at",
@@ -229,6 +250,11 @@ public sealed class ReceiptSearchTests
 							new
 							{
 								text_match = 0.75,
+								vector_distance = 0.01,
+								hybrid_search_info = new
+								{
+									rank_fusion_score = 0.9
+								},
 								document = new
 								{
 									receipt_id = receiptId,
@@ -261,7 +287,134 @@ public sealed class ReceiptSearchTests
 		Assert.Equal(receiptId, match.ReceiptId);
 		Assert.Equal(documentId, match.DocumentId);
 		Assert.Equal(2, match.ChunkIndex);
-		Assert.Equal(0.75, match.RelevanceScore);
+		Assert.Equal(0.9, match.RelevanceScore);
+		Assert.DoesNotContain("embedding", JsonSerializer.Serialize(match));
+	}
+
+	[Fact]
+	public async Task TypesenseSearch_AcceptsV28ZeroResultResponse()
+	{
+		var handler = new CapturingHttpHandler(request =>
+		{
+			if (request.Method == HttpMethod.Get)
+				return CollectionSchemaResponse(1024);
+
+			return JsonResponse("""
+				{"results":[{"facet_counts":[],"found":0,"hits":[],"out_of":0,"page":1,"request_params":{"collection_name":"receipt_chunks_v1"},"search_cutoff":false,"search_time_ms":1}]}
+				""");
+		});
+		using var provider = CreateTypesenseProvider(handler);
+		var index = provider.GetRequiredService<ISearchIndex>();
+
+		var result = await index.SearchAsync(new SearchIndexQuery(
+			"usb",
+			"user-b",
+			Enumerable.Repeat(0.1f, 1024).ToArray(),
+			1,
+			10));
+
+		Assert.Equal(0, result.Total);
+		Assert.Empty(result.Matches);
+	}
+
+	[Fact]
+	public async Task TypesenseSearch_UsesSafeFallbackWhenScoreMetadataIsMissing()
+	{
+		var receiptId = Guid.NewGuid();
+		var documentId = Guid.NewGuid();
+		var response = JsonSerializer.Serialize(new
+		{
+			results = new[]
+			{
+				new
+				{
+					found = 1,
+					hits = new[]
+					{
+						new
+						{
+							document = new
+							{
+								receipt_id = receiptId,
+								document_id = documentId,
+								chunk_index = 0,
+								content = "Safe indexed content"
+							}
+						}
+					}
+				}
+			}
+		});
+		var handler = new CapturingHttpHandler(request =>
+			request.Method == HttpMethod.Get
+				? CollectionSchemaResponse(1024)
+				: JsonResponse(response));
+		using var provider = CreateTypesenseProvider(handler);
+		var index = provider.GetRequiredService<ISearchIndex>();
+
+		var result = await index.SearchAsync(new SearchIndexQuery(
+			"usb",
+			"user-b",
+			Enumerable.Repeat(0.1f, 1024).ToArray(),
+			1,
+			10));
+
+		Assert.Equal(0, Assert.Single(result.Matches).RelevanceScore);
+	}
+
+	[Fact]
+	public async Task TypesenseSearch_ReportsEmbeddedV28SearchErrorInsteadOfIncompleteResponse()
+	{
+		const string providerError =
+			"Vector field `embedding` is not an auto-embedding field, do not use `query_by` with it, use `vector_query` instead.";
+		var handler = new CapturingHttpHandler(request =>
+			request.Method == HttpMethod.Get
+				? CollectionSchemaResponse(1024)
+				: JsonResponse(JsonSerializer.Serialize(new
+				{
+					results = new[] { new { code = 400, error = providerError } }
+				})));
+		using var provider = CreateTypesenseProvider(handler);
+		var index = provider.GetRequiredService<ISearchIndex>();
+
+		var exception = await Assert.ThrowsAsync<SearchIndexingException>(() =>
+			index.SearchAsync(new SearchIndexQuery(
+				"usb",
+				"user-b",
+				Enumerable.Repeat(0.1f, 1024).ToArray(),
+				1,
+				10)));
+
+		Assert.Equal("Typesense search", exception.Component);
+		Assert.Equal(400, exception.HttpStatusCode);
+		Assert.False(exception.IsTransient);
+		Assert.Contains("not an auto-embedding field", exception.Message);
+		Assert.DoesNotContain("incomplete", exception.Message);
+	}
+
+	[Theory]
+	[InlineData("{\"results\":", "malformed")]
+	[InlineData("{\"results\":[{\"found\":0}]}", "incomplete")]
+	public async Task TypesenseSearch_RejectsMalformedOrIncompleteResponses(
+		string response,
+		string expectedMessage)
+	{
+		var handler = new CapturingHttpHandler(request =>
+			request.Method == HttpMethod.Get
+				? CollectionSchemaResponse(1024)
+				: JsonResponse(response));
+		using var provider = CreateTypesenseProvider(handler);
+		var index = provider.GetRequiredService<ISearchIndex>();
+
+		var exception = await Assert.ThrowsAsync<SearchIndexingException>(() =>
+			index.SearchAsync(new SearchIndexQuery(
+				"usb",
+				"user-b",
+				Enumerable.Repeat(0.1f, 1024).ToArray(),
+				1,
+				10)));
+
+		Assert.Contains(expectedMessage, exception.Message, StringComparison.OrdinalIgnoreCase);
 	}
 
 	[Theory]
@@ -443,12 +596,15 @@ public sealed class ReceiptSearchTests
 		: ITextEmbeddingGenerator
 	{
 		public CancellationToken LastCancellationToken { get; private set; }
+		public EmbeddingInputType? LastInputType { get; private set; }
 
 		public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateAsync(
 			IReadOnlyList<string> texts,
+			EmbeddingInputType inputType,
 			CancellationToken cancellationToken = default)
 		{
 			LastCancellationToken = cancellationToken;
+			LastInputType = inputType;
 			return Task.FromResult<IReadOnlyList<IReadOnlyList<float>>>(
 				texts.Select(_ =>
 					(IReadOnlyList<float>)Enumerable.Repeat(0.1f, dimensions).ToArray())
@@ -460,6 +616,7 @@ public sealed class ReceiptSearchTests
 	{
 		public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateAsync(
 			IReadOnlyList<string> texts,
+			EmbeddingInputType inputType,
 			CancellationToken cancellationToken = default) =>
 			Task.FromException<IReadOnlyList<IReadOnlyList<float>>>(
 				new SearchIndexingException(

@@ -108,7 +108,9 @@ public sealed class ReceiptSearchIndexingTests
 		});
 		var generator = CreateEmbeddingGenerator(handler, batchSize: 2);
 
-		var embeddings = await generator.GenerateAsync(["one", "two", "three"]);
+		var embeddings = await generator.GenerateAsync(
+			["one", "two", "three"],
+			EmbeddingInputType.Passage);
 
 		Assert.Equal(3, embeddings.Count);
 		Assert.Equal(
@@ -136,7 +138,9 @@ public sealed class ReceiptSearchIndexingTests
 		var generator = CreateEmbeddingGenerator(handler, dimensions: 1024);
 
 		var exception = await Assert.ThrowsAsync<SearchIndexingException>(
-			() => generator.GenerateAsync(["one"]));
+			() => generator.GenerateAsync(
+				["one"],
+				EmbeddingInputType.Passage));
 
 		Assert.False(exception.IsTransient);
 	}
@@ -158,9 +162,58 @@ public sealed class ReceiptSearchIndexingTests
 			})));
 		var generator = CreateEmbeddingGenerator(handler, dimensions: 1024);
 
-		var embedding = Assert.Single(await generator.GenerateAsync(["one"]));
+		var embedding = Assert.Single(await generator.GenerateAsync(
+			["one"],
+			EmbeddingInputType.Query));
 
 		Assert.Equal(1024, embedding.Count);
+	}
+
+	[Theory]
+	[InlineData(EmbeddingInputType.Query, "query")]
+	[InlineData(EmbeddingInputType.Passage, "passage")]
+	public async Task NvidiaEmbeddings_SendsRequiredInputType(
+		EmbeddingInputType inputType,
+		string expectedProviderValue)
+	{
+		var handler = new CapturingHttpHandler(_ =>
+			JsonResponse("""{"data":[{"index":0,"embedding":[0.1,0.2,0.3]}]}"""));
+		var generator = CreateEmbeddingGenerator(handler);
+
+		await generator.GenerateAsync(["one"], inputType);
+
+		var request = Assert.Single(handler.Requests);
+		using var body = JsonDocument.Parse(request.Body);
+		Assert.Equal(
+			expectedProviderValue,
+			body.RootElement.GetProperty("input_type").GetString());
+	}
+
+	[Fact]
+	public async Task NvidiaEmbeddings_RejectedRequestCapturesSafeDiagnostics()
+	{
+		var handler = new CapturingHttpHandler(_ =>
+		{
+			var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+			{
+				Content = new StringContent(
+					"""{"detail":[{"msg":"input_type is required"}]}""",
+					Encoding.UTF8,
+					"application/json")
+			};
+			response.Headers.Add("x-request-id", "safe-request-id");
+			return response;
+		});
+		var generator = CreateEmbeddingGenerator(handler);
+
+		var exception = await Assert.ThrowsAsync<SearchIndexingException>(() =>
+			generator.GenerateAsync(["one"], EmbeddingInputType.Query));
+
+		Assert.False(exception.IsTransient);
+		Assert.Equal("NVIDIA embeddings", exception.Component);
+		Assert.Equal(400, exception.HttpStatusCode);
+		Assert.Equal("safe-request-id", exception.ProviderRequestId);
+		Assert.Contains("input_type is required", exception.Message);
 	}
 
 	[Fact]
@@ -169,7 +222,11 @@ public sealed class ReceiptSearchIndexingTests
 		await using var dbContext = CreateDbContext();
 		var document = AddCompletedDocument(dbContext, "user-a");
 		var searchIndex = new CapturingSearchIndex();
-		var consumer = CreateConsumer(dbContext, searchIndex: searchIndex);
+		var embeddings = new FixedEmbeddingGenerator();
+		var consumer = CreateConsumer(
+			dbContext,
+			searchIndex: searchIndex,
+			embeddingGenerator: embeddings);
 
 		await consumer.HandleAsync(CreateMessage(document));
 
@@ -189,6 +246,7 @@ public sealed class ReceiptSearchIndexingTests
 				item.ExtractedAtUtc);
 		});
 		Assert.Single(searchIndex.DeleteCalls);
+		Assert.Equal(EmbeddingInputType.Passage, embeddings.LastInputType);
 	}
 
 	[Fact]
@@ -639,10 +697,14 @@ public sealed class ReceiptSearchIndexingTests
 
 	private sealed class FixedEmbeddingGenerator : ITextEmbeddingGenerator
 	{
+		public EmbeddingInputType? LastInputType { get; private set; }
+
 		public Task<IReadOnlyList<IReadOnlyList<float>>> GenerateAsync(
 			IReadOnlyList<string> inputs,
+			EmbeddingInputType inputType,
 			CancellationToken cancellationToken = default)
 		{
+			LastInputType = inputType;
 			return Task.FromResult<IReadOnlyList<IReadOnlyList<float>>>(
 				inputs.Select(_ => (IReadOnlyList<float>)[0.1f, 0.2f, 0.3f]).ToArray());
 		}

@@ -39,9 +39,13 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 		catch (SearchIndexingException exception)
 		{
 			logger.LogWarning(
-				"Receipt document search indexing skipped for document {DocumentId}: {Reason}",
+				exception,
+				"Receipt document search indexing skipped for document {DocumentId}. Component {Component}, HTTP status {HttpStatus}, provider request {ProviderRequestId}, transient {IsTransient}.",
 				message.DocumentId,
-				exception.Message);
+				exception.Component ?? "search-indexing",
+				exception.HttpStatusCode,
+				exception.ProviderRequestId ?? "not-provided",
+				exception.IsTransient);
 		}
 	}
 
@@ -111,6 +115,7 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 
 		var embeddings = await embeddingGenerator.GenerateAsync(
 			chunks.Select(chunk => chunk.Content).ToArray(),
+			EmbeddingInputType.Passage,
 			cancellationToken);
 
 		if (embeddings.Count != chunks.Count)
