@@ -7,6 +7,7 @@ using ReceiptFlow.Application.Abstractions.Authentication;
 using ReceiptFlow.Application.Assistant.Receipts;
 using ReceiptFlow.Application.Dashboard;
 using ReceiptFlow.Application.Receipts.CreateReceipt;
+using ReceiptFlow.Application.Receipts.Confirmation;
 using ReceiptFlow.Application.Receipts.Documents;
 using ReceiptFlow.Application.Receipts.GetReceipt;
 using ReceiptFlow.Application.Receipts.ListReceipts;
@@ -79,6 +80,7 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 builder.Services.AddScoped<CreateReceiptHandler>();
+builder.Services.AddScoped<ConfirmReceiptHandler>();
 builder.Services.AddScoped<GetReceiptHandler>();
 builder.Services.AddScoped<ListReceiptsHandler>();
 builder.Services.AddScoped<GetDashboardHandler>();

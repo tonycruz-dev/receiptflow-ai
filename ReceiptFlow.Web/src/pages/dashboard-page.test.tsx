@@ -16,6 +16,7 @@ const dashboard: DashboardResponse = {
       totalAmount: 71.96,
       currency: 'GBP',
       category: 'Stationery',
+      lifecycleStatus: 'Confirmed',
       documentId: 'document-1',
       originalFileName: 'receipt-test.pdf',
       processingStatus: 'Completed',

@@ -230,6 +230,7 @@ internal sealed class NvidiaDocumentExtractor(
 			"tax",
 			"total",
 			"currency",
+			"category",
 			"items",
 			"rawText",
 			"confidence"
@@ -242,6 +243,7 @@ internal sealed class NvidiaDocumentExtractor(
 			tax = NullableNumber(),
 			total = NullableNumber(),
 			currency = NullableString(),
+			category = NullableString(),
 			items = new
 			{
 				type = "array",
@@ -300,7 +302,8 @@ internal sealed class NvidiaDocumentExtractor(
 			payload.Subtotal,
 			payload.Tax,
 			payload.Total,
-			NormalizeCurrency(payload.Currency));
+			NormalizeCurrency(payload.Currency),
+			payload.Category);
 
 		var items = (payload.Items ?? [])
 			.Where(item => !string.IsNullOrWhiteSpace(item.Description))
@@ -621,6 +624,7 @@ Return JSON only using this schema:
   "tax": null,
   "total": null,
   "currency": null,
+  "category": null,
   "items": [
     {
       "description": "",
@@ -633,7 +637,7 @@ Return JSON only using this schema:
   "rawText": "",
   "confidence": 0.0
 }
-Never invent unreadable values. Use null for unknown fields. Preserve receipt wording in rawText. Use ISO-8601 date when confidently known. Use ISO currency code when confidently known. Return numeric monetary values without currency symbols.
+Never invent unreadable values. Use null for unknown fields. Preserve receipt wording in rawText. Use ISO-8601 date when confidently known. Use ISO currency code when confidently known. Suggest a concise expense category only when supported by the receipt. Return numeric monetary values without currency symbols.
 """;
 
 	private sealed record ImageInput(
@@ -647,6 +651,7 @@ Never invent unreadable values. Use null for unknown fields. Preserve receipt wo
 		decimal? Tax,
 		decimal? Total,
 		string? Currency,
+		string? Category,
 		IReadOnlyList<NvidiaLineItemPayload> Items,
 		string RawText,
 		decimal Confidence);

@@ -240,6 +240,10 @@ public sealed class ReceiptSearchIndexingTests
 			Assert.Equal("user-a", item.OwnerUserId);
 			Assert.Equal(document.Id, item.DocumentId);
 			Assert.Equal(document.ReceiptId, item.ReceiptId);
+			Assert.Equal("Corner Shop", item.MerchantName);
+			Assert.Equal("Groceries", item.Category);
+			Assert.Equal("GBP", item.Currency);
+			Assert.Equal(12.50, item.Total);
 			Assert.Equal(3, item.Embedding.Count);
 			Assert.Equal(
 				extractedAtUtc.ToUnixTimeSeconds(),
@@ -303,6 +307,47 @@ public sealed class ReceiptSearchIndexingTests
 			DocumentType.ReceiptImage);
 		receipt.AddDocument(document);
 		dbContext.Receipts.Add(receipt);
+		await dbContext.SaveChangesAsync();
+		var searchIndex = new CapturingSearchIndex();
+		var consumer = CreateConsumer(dbContext, searchIndex: searchIndex);
+
+		await consumer.HandleAsync(CreateMessage(document));
+
+		Assert.Empty(searchIndex.Upserts);
+		Assert.Empty(searchIndex.DeleteCalls);
+	}
+
+	[Fact]
+	public async Task ExtractionCompletedConsumer_UnconfirmedReceiptIsIgnored()
+	{
+		await using var dbContext = CreateDbContext();
+		var receipt = Receipt.CreateDraft("user-a");
+		receipt.BeginProcessing();
+		var document = new Document(
+			"user-a",
+			"receipt.jpg",
+			"generated/storage-key",
+			"image/jpeg",
+			123,
+			DocumentType.ReceiptImage);
+		receipt.AddDocument(document);
+		document.MarkProcessing();
+		document.MarkCompleted();
+		receipt.MarkReviewRequired();
+		dbContext.Receipts.Add(receipt);
+		dbContext.DocumentExtractions.Add(new DocumentExtraction(
+			document.Id,
+			"Unconfirmed source text",
+			"Suggested Shop",
+			DateTimeOffset.UtcNow.AddDays(-1),
+			10m,
+			2m,
+			12m,
+			"GBP",
+			0.9m,
+			"Test",
+			"test-model",
+			null));
 		await dbContext.SaveChangesAsync();
 		var searchIndex = new CapturingSearchIndex();
 		var consumer = CreateConsumer(dbContext, searchIndex: searchIndex);

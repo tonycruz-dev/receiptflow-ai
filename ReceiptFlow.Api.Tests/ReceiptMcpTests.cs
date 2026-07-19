@@ -186,7 +186,11 @@ public sealed class ReceiptMcpTests
 			currentUser,
 			new StubEmbeddingGenerator(),
 			index);
-		var answer = new AskReceiptQuestionHandler(currentUser, search, generator);
+		var answer = new AskReceiptQuestionHandler(
+			currentUser,
+			search,
+			generator,
+			NullLogger<AskReceiptQuestionHandler>.Instance);
 		return new McpReceiptTools(
 			currentUser,
 			search,

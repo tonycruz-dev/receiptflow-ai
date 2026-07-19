@@ -5,26 +5,26 @@ import type { ReceiptStatus } from '@/components/shared/status-badge';
 export function mapReceiptSummary(receipt: ReceiptSummary): ReceiptCardData {
   return {
     id: receipt.receiptId,
-    merchant: receipt.merchantName,
+    merchant: receipt.merchantName ?? 'Receipt awaiting extraction',
     date: receipt.purchaseDate,
     total: receipt.totalAmount,
     currency: receipt.currency,
-    status: mapProcessingStatus(receipt.processingStatus),
+    status: mapLifecycleStatus(receipt.lifecycleStatus),
     fileName: receipt.originalFileName ?? 'No document uploaded',
   };
 }
 
-function mapProcessingStatus(status: string | null): ReceiptStatus {
+function mapLifecycleStatus(status: string): ReceiptStatus {
   switch (status) {
-    case 'Completed':
-    case 'Failed':
-    case 'Pending':
-      return status;
-    case 'AwaitingReview':
+    case 'Draft':
     case 'Processing':
-    case 'Queued':
-      return 'Processing';
+    case 'Failed':
+      return status;
+    case 'ReviewRequired':
+      return 'Review required';
+    case 'Confirmed':
+      return 'Confirmed';
     default:
-      return 'Pending';
+      return 'Draft';
   }
 }

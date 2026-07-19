@@ -70,6 +70,8 @@ internal sealed class ReceiptDocumentReadStore(
 				document.ProcessingStatus == DocumentProcessingStatus.Failed
 					? SafeProcessingError
 					: null,
+				document.Receipt!.LifecycleStatus.ToString(),
+				document.Receipt.LifecycleStatus == ReceiptLifecycleStatus.ReviewRequired,
 				document.Extraction == null
 					? null
 					: new ReceiptDocumentExtractionResponse(
@@ -79,6 +81,7 @@ internal sealed class ReceiptDocumentReadStore(
 						document.Extraction.Tax,
 						document.Extraction.Total,
 						document.Extraction.Currency,
+						document.Extraction.Category,
 						document.Extraction.OverallConfidence,
 						document.Extraction.Provider,
 						document.Extraction.ModelId,

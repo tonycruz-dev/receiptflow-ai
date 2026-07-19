@@ -48,6 +48,10 @@ internal sealed class DocumentExtractionConfiguration
 			.HasColumnName("currency")
 			.HasMaxLength(3);
 
+		builder.Property(extraction => extraction.Category)
+			.HasColumnName("category")
+			.HasMaxLength(100);
+
 		builder.Property(extraction => extraction.OverallConfidence)
 			.HasColumnName("overall_confidence")
 			.HasPrecision(5, 4);

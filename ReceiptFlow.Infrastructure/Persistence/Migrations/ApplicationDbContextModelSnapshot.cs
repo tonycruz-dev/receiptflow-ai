@@ -296,6 +296,11 @@ namespace ReceiptFlow.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("ReceiptFlow.Domain.Entities.DocumentExtraction", b =>
                 {
+					b.Property<string>("Category")
+						.HasMaxLength(100)
+						.HasColumnType("character varying(100)")
+						.HasColumnName("category");
+
                     b.Property<Guid>("Id")
                         .HasColumnType("uuid")
                         .HasColumnName("id");
@@ -378,7 +383,6 @@ namespace ReceiptFlow.Infrastructure.Persistence.Migrations
                         .HasColumnName("id");
 
                     b.Property<string>("Category")
-                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("category");
@@ -388,13 +392,17 @@ namespace ReceiptFlow.Infrastructure.Persistence.Migrations
                         .HasColumnName("created_at_utc");
 
                     b.Property<string>("Currency")
-                        .IsRequired()
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)")
                         .HasColumnName("currency");
 
+					b.Property<string>("LifecycleStatus")
+						.IsRequired()
+						.HasMaxLength(50)
+						.HasColumnType("character varying(50)")
+						.HasColumnName("lifecycle_status");
+
                     b.Property<string>("MerchantName")
-                        .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("merchant_name");
@@ -405,7 +413,7 @@ namespace ReceiptFlow.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("owner_user_id");
 
-                    b.Property<DateTimeOffset>("PurchaseDate")
+					b.Property<DateTimeOffset?>("PurchaseDate")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("purchase_date");
 
@@ -419,7 +427,7 @@ namespace ReceiptFlow.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("tax_amount");
 
-                    b.Property<decimal>("TotalAmount")
+					b.Property<decimal?>("TotalAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("total_amount");
@@ -432,6 +440,9 @@ namespace ReceiptFlow.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("OwnerUserId")
                         .HasDatabaseName("ix_receipts_owner_user_id");
+
+					b.HasIndex("OwnerUserId", "LifecycleStatus")
+						.HasDatabaseName("ix_receipts_owner_user_id_lifecycle_status");
 
                     b.HasIndex("OwnerUserId", "PurchaseDate")
                         .HasDatabaseName("ix_receipts_owner_user_id_purchase_date");

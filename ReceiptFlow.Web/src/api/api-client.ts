@@ -3,12 +3,19 @@ import { reportAuthDiagnostic } from '@/providers/auth-diagnostics';
 import type {
   AskReceiptQuestionRequest,
   AskReceiptQuestionResponse,
+  ConfirmReceiptRequest,
   CurrentUser,
+  CreateReceiptRequest,
   DashboardResponse,
+  ImportReceiptResponse,
   ProblemDetails,
   ReceiptSearchRequest,
   ReceiptSearchResponse,
   ReceiptListResponse,
+  ReceiptDocumentDetail,
+  ReceiptDocumentSummary,
+  ReceiptResponse,
+  UploadReceiptDocumentResponse,
 } from '@/api/contracts';
 
 interface AuthenticatedApiClientOptions {
@@ -19,7 +26,7 @@ interface AuthenticatedApiClientOptions {
 }
 
 export interface RequestOptions<TBody = never> {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT';
   body?: TBody;
   signal?: AbortSignal | undefined;
 }
@@ -32,6 +39,34 @@ export interface ReceiptFlowApiClient {
     pageSize: number,
     signal?: AbortSignal,
   ): Promise<ReceiptListResponse>;
+  createReceipt(
+    request: CreateReceiptRequest,
+    signal?: AbortSignal,
+  ): Promise<ReceiptResponse>;
+  getReceipt(receiptId: string, signal?: AbortSignal): Promise<ReceiptResponse>;
+  uploadReceiptDocument(
+    receiptId: string,
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<UploadReceiptDocumentResponse>;
+  importReceipt(
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<ImportReceiptResponse>;
+  confirmReceipt(
+    receiptId: string,
+    request: ConfirmReceiptRequest,
+    signal?: AbortSignal,
+  ): Promise<ReceiptResponse>;
+  listReceiptDocuments(
+    receiptId: string,
+    signal?: AbortSignal,
+  ): Promise<ReceiptDocumentSummary[]>;
+  getReceiptDocument(
+    receiptId: string,
+    documentId: string,
+    signal?: AbortSignal,
+  ): Promise<ReceiptDocumentDetail>;
   searchReceipts(
     request: ReceiptSearchRequest,
     signal?: AbortSignal,
@@ -82,17 +117,24 @@ export function createApiClient({
     options: RequestOptions<TBody> = {},
   ): Promise<TResponse> {
     const token = await getAccessToken();
-    const hasBody = options.body !== undefined;
+    const body = options.body;
+    const hasBody = body !== undefined;
+    const isMultipart = body instanceof FormData;
     const requestInit: RequestInit = {
       method: options.method ?? 'GET',
       headers: {
         Accept: 'application/json, application/problem+json',
         Authorization: `Bearer ${token}`,
-        ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+        ...(hasBody && !isMultipart
+          ? { 'Content-Type': 'application/json' }
+          : {}),
       },
       credentials: 'omit',
     };
-    if (hasBody) requestInit.body = JSON.stringify(options.body);
+    if (hasBody) {
+      if (body instanceof FormData) requestInit.body = body;
+      else requestInit.body = JSON.stringify(body);
+    }
     if (options.signal) requestInit.signal = options.signal;
 
     const response = await fetchImplementation(
@@ -154,6 +196,51 @@ export function createApiClient({
     listReceipts: (page, pageSize, signal) =>
       request<ReceiptListResponse>(
         `/api/receipts?page=${page.toString()}&pageSize=${pageSize.toString()}`,
+        { signal },
+      ),
+    createReceipt: (body, signal) =>
+      request<ReceiptResponse, CreateReceiptRequest>('/api/receipts', {
+        method: 'POST',
+        body,
+        signal,
+      }),
+    getReceipt: (receiptId, signal) =>
+      request<ReceiptResponse>(
+        `/api/receipts/${encodeURIComponent(receiptId)}`,
+        {
+          signal,
+        },
+      ),
+    uploadReceiptDocument: (receiptId, file, signal) => {
+      const body = new FormData();
+      body.append('file', file);
+      return request<UploadReceiptDocumentResponse, FormData>(
+        `/api/receipts/${encodeURIComponent(receiptId)}/documents`,
+        { method: 'POST', body, signal },
+      );
+    },
+    importReceipt: (file, signal) => {
+      const body = new FormData();
+      body.append('file', file);
+      return request<ImportReceiptResponse, FormData>('/api/receipts/import', {
+        method: 'POST',
+        body,
+        signal,
+      });
+    },
+    confirmReceipt: (receiptId, body, signal) =>
+      request<ReceiptResponse, ConfirmReceiptRequest>(
+        `/api/receipts/${encodeURIComponent(receiptId)}/confirmation`,
+        { method: 'PUT', body, signal },
+      ),
+    listReceiptDocuments: (receiptId, signal) =>
+      request<ReceiptDocumentSummary[]>(
+        `/api/receipts/${encodeURIComponent(receiptId)}/documents`,
+        { signal },
+      ),
+    getReceiptDocument: (receiptId, documentId, signal) =>
+      request<ReceiptDocumentDetail>(
+        `/api/receipts/${encodeURIComponent(receiptId)}/documents/${encodeURIComponent(documentId)}`,
         { signal },
       ),
     searchReceipts: (body, signal) =>

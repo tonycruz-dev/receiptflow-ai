@@ -24,13 +24,11 @@ internal sealed class ReceiptConfiguration
 
 		builder.Property(receipt => receipt.MerchantName)
 			.HasColumnName("merchant_name")
-			.HasMaxLength(200)
-			.IsRequired();
+			.HasMaxLength(200);
 
 		builder.Property(receipt => receipt.PurchaseDate)
 			.HasColumnName("purchase_date")
-			.HasColumnType("timestamp with time zone")
-			.IsRequired();
+			.HasColumnType("timestamp with time zone");
 
 		builder.Property(receipt => receipt.SubtotalAmount)
 			.HasColumnName("subtotal_amount")
@@ -42,17 +40,20 @@ internal sealed class ReceiptConfiguration
 
 		builder.Property(receipt => receipt.TotalAmount)
 			.HasColumnName("total_amount")
-			.HasPrecision(18, 2)
-			.IsRequired();
+			.HasPrecision(18, 2);
 
 		builder.Property(receipt => receipt.Currency)
 			.HasColumnName("currency")
-			.HasMaxLength(3)
-			.IsRequired();
+			.HasMaxLength(3);
 
 		builder.Property(receipt => receipt.Category)
 			.HasColumnName("category")
-			.HasMaxLength(100)
+			.HasMaxLength(100);
+
+		builder.Property(receipt => receipt.LifecycleStatus)
+			.HasColumnName("lifecycle_status")
+			.HasConversion<string>()
+			.HasMaxLength(50)
 			.IsRequired();
 
 		builder.Property(receipt => receipt.CreatedAtUtc)
@@ -66,6 +67,13 @@ internal sealed class ReceiptConfiguration
 
 		builder.HasIndex(receipt => receipt.OwnerUserId)
 			.HasDatabaseName("ix_receipts_owner_user_id");
+
+		builder.HasIndex(receipt => new
+		{
+			receipt.OwnerUserId,
+			receipt.LifecycleStatus
+		})
+			.HasDatabaseName("ix_receipts_owner_user_id_lifecycle_status");
 
 		builder.HasIndex(receipt => new
 		{

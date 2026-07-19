@@ -32,6 +32,18 @@ public sealed class GetReceiptHandler(
 			receipt.TotalAmount,
 			receipt.Currency,
 			receipt.Category,
-			receipt.CreatedAtUtc);
+			receipt.LifecycleStatus.ToString(),
+			receipt.CreatedAtUtc,
+			receipt.LineItems
+				.OrderBy(item => item.DisplayOrder)
+				.Select(item => new ReceiptLineItemResponse(
+					item.Id,
+					item.Description,
+					item.Quantity,
+					item.UnitPrice,
+					item.LineTotal,
+					item.TaxAmount,
+					item.DisplayOrder))
+				.ToArray());
 	}
 }

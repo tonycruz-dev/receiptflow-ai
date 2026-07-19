@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
 using ReceiptFlow.Application.Abstractions.Assistant;
 using ReceiptFlow.Application.Abstractions.Authentication;
 using ReceiptFlow.Application.Abstractions.Search;
@@ -139,6 +140,110 @@ public sealed class ReceiptAssistantTests
 	}
 
 	[Fact]
+	public async Task StructuredCitationReturnsSourceWithoutRequiringProseMarker()
+	{
+		var receiptId = Guid.NewGuid();
+		var documentId = Guid.NewGuid();
+		var generator = new CapturingAnswerGenerator(
+			new ReceiptGeneratedAnswer("You purchased a television for £674.", [1]));
+		var handler = CreateHandler(
+			"bob",
+			generator,
+			new CapturingSearchIndex(new SearchIndexPage(1,
+				[Match(receiptId, documentId, 0, "television receipt", 1)])));
+
+		var response = await handler.HandleAsync(
+			new AskReceiptQuestionRequest("What television did I purchase?"));
+
+		Assert.EndsWith("[1]", response.Answer);
+		var source = Assert.Single(response.Sources);
+		Assert.Equal(receiptId, source.ReceiptId);
+		Assert.Equal(documentId, source.DocumentId);
+	}
+
+	[Fact]
+	public async Task MissingProviderCitationUsesHighestRankedTrustedEvidence()
+	{
+		var highestReceiptId = Guid.NewGuid();
+		var generator = new CapturingAnswerGenerator(
+			new ReceiptGeneratedAnswer("The receipt total was £674.", []));
+		var handler = CreateHandler(
+			"bob",
+			generator,
+			new CapturingSearchIndex(new SearchIndexPage(2,
+			[
+				Match(highestReceiptId, Guid.NewGuid(), 0, "highest", 1),
+				Match(Guid.NewGuid(), Guid.NewGuid(), 0, "lower", 0.7)
+			])));
+
+		var response = await handler.HandleAsync(
+			new AskReceiptQuestionRequest("What was the total?"));
+
+		Assert.EndsWith("[1]", response.Answer);
+		Assert.Equal(highestReceiptId, Assert.Single(response.Sources).ReceiptId);
+	}
+
+	[Fact]
+	public async Task UnknownCitationIsRejectedAndTrustedFallbackIsUsed()
+	{
+		var trustedReceiptId = Guid.NewGuid();
+		var generator = new CapturingAnswerGenerator(
+			new ReceiptGeneratedAnswer("Receipt answer [999].", [999]));
+		var handler = CreateHandler(
+			"bob",
+			generator,
+			new CapturingSearchIndex(new SearchIndexPage(1,
+				[Match(trustedReceiptId, Guid.NewGuid(), 0, "trusted", 1)])));
+
+		var response = await handler.HandleAsync(
+			new AskReceiptQuestionRequest("Question"));
+
+		Assert.DoesNotContain("[999]", response.Answer);
+		Assert.EndsWith("[1]", response.Answer);
+		Assert.Equal(trustedReceiptId, Assert.Single(response.Sources).ReceiptId);
+	}
+
+	[Fact]
+	public async Task DuplicateStructuredCitationsCollapseToOneSource()
+	{
+		var generator = new CapturingAnswerGenerator(
+			new ReceiptGeneratedAnswer("Receipt answer.", [1, 1]));
+		var handler = CreateHandler(
+			"bob",
+			generator,
+			new CapturingSearchIndex(new SearchIndexPage(1,
+				[Match(Guid.NewGuid(), Guid.NewGuid(), 0, "trusted", 1)])));
+
+		var response = await handler.HandleAsync(
+			new AskReceiptQuestionRequest("Question"));
+
+		Assert.Single(response.Sources);
+		Assert.Equal(1, response.Answer.Count(character => character == '['));
+	}
+
+	[Fact]
+	public async Task EndpointSerializesValidatedTrustedSources()
+	{
+		var receiptId = Guid.NewGuid();
+		var generator = new CapturingAnswerGenerator(
+			new ReceiptGeneratedAnswer("Grounded answer without marker.", [1]));
+		var index = new CapturingSearchIndex(new SearchIndexPage(1,
+			[Match(receiptId, Guid.NewGuid(), 0, "trusted", 1)]));
+		await using var factory = CreateFactory(generator, index);
+		using var client = CreateAuthenticatedClient(factory, "bob");
+
+		var response = await client.PostAsJsonAsync(
+			"/api/assistant/receipts/ask",
+			new AskReceiptQuestionRequest("What did I buy?"));
+		var payload = await response.Content
+			.ReadFromJsonAsync<AskReceiptQuestionResponse>();
+
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		Assert.NotNull(payload);
+		Assert.Equal(receiptId, Assert.Single(payload.Sources).ReceiptId);
+	}
+
+	[Fact]
 	public async Task CrossUserIsolationComesFromTrustedCurrentUserQuery()
 	{
 		var alice = Match(Guid.NewGuid(), Guid.NewGuid(), 0, "alice secret", 0.9);
@@ -223,7 +328,7 @@ public sealed class ReceiptAssistantTests
 			return new HttpResponseMessage(HttpStatusCode.OK)
 			{
 				Content = new StringContent(
-					"{\"choices\":[{\"message\":{\"content\":\"{\\\"answer\\\":\\\"Grounded [1]\\\",\\\"citations\\\":[1]}\"}}]}",
+					"{\"choices\":[{\"message\":{\"content\":\"{\\\"answer\\\":\\\"Grounded [1]\\\",\\\"citationIds\\\":[1]}\"}}]}",
 					Encoding.UTF8,
 					"application/json")
 			};
@@ -256,12 +361,52 @@ public sealed class ReceiptAssistantTests
 		Assert.NotNull(requestBody);
 		using var payload = JsonDocument.Parse(requestBody);
 		var messages = payload.RootElement.GetProperty("messages");
+		var responseFormat = payload.RootElement.GetProperty("response_format");
 		var systemInstruction = messages[0].GetProperty("content").GetString();
 		var userMessage = messages[1].GetProperty("content").GetString();
 		Assert.Contains("answer questions only from the supplied receipt evidence", systemInstruction);
+		Assert.Equal("json_schema", responseFormat.GetProperty("type").GetString());
+		Assert.True(responseFormat.GetProperty("json_schema").GetProperty("strict").GetBoolean());
 		Assert.Contains("<untrusted_receipt_text>", userMessage);
 		Assert.Contains(injection, userMessage);
 		Assert.DoesNotContain("test-secret", requestBody);
+		Assert.DoesNotContain("embedding", requestBody, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public async Task NvidiaProviderPreservesItemDeliveryAndTotalEvidence()
+	{
+		string? requestBody = null;
+		var httpHandler = new DelegatingTestHandler(async request =>
+		{
+			requestBody = await request.Content!.ReadAsStringAsync();
+			return new HttpResponseMessage(HttpStatusCode.OK)
+			{
+				Content = new StringContent(
+					"{\"choices\":[{\"message\":{\"content\":\"{\\\"answer\\\":\\\"The television cost £649, delivery was £25, and the total including delivery was £674 [1].\\\",\\\"citationIds\\\":[1]}\"}}]}",
+					Encoding.UTF8,
+					"application/json")
+			};
+		});
+		using var provider = CreateAnswerProvider(httpHandler);
+		var generator = provider.GetRequiredService<IReceiptAnswerGenerator>();
+
+		var result = await generator.GenerateAsync(
+			"What television did I purchase and how much did I pay including delivery?",
+			[new ReceiptAnswerEvidence(
+				1,
+				"AuroraView television total 649. Room-of-choice delivery total 25. Receipt Total 674.",
+				"Northstar Electronics UK Ltd",
+				DateTimeOffset.Parse("2026-07-19T00:00:00Z"),
+				674,
+				"GBP")]);
+
+		Assert.Contains("£649", result.Answer);
+		Assert.Contains("£25", result.Answer);
+		Assert.Contains("£674", result.Answer);
+		Assert.Equal([1], result.CitationIdentifiers);
+		Assert.NotNull(requestBody);
+		Assert.Contains("delivery", requestBody, StringComparison.OrdinalIgnoreCase);
 		Assert.DoesNotContain("embedding", requestBody, StringComparison.OrdinalIgnoreCase);
 	}
 
@@ -275,7 +420,31 @@ public sealed class ReceiptAssistantTests
 				new StubCurrentUser(user),
 				new FixedEmbeddingGenerator(),
 				index),
-			generator);
+			generator,
+			NullLogger<AskReceiptQuestionHandler>.Instance);
+
+	private static ServiceProvider CreateAnswerProvider(
+		HttpMessageHandler httpHandler)
+	{
+		var configuration = new ConfigurationBuilder()
+			.AddInMemoryCollection(new Dictionary<string, string?>
+			{
+				["AI:AnswerProvider"] = "Nvidia",
+				["NvidiaChat:Endpoint"] = "https://nvidia.test/v1/chat/completions",
+				["NvidiaChat:Model"] = "test-model",
+				["NvidiaChat:ApiKey"] = "test-secret",
+				["NvidiaChat:MaximumOutputTokens"] = "128",
+				["NvidiaChat:Temperature"] = "0.1"
+			})
+			.Build();
+		var services = new ServiceCollection();
+		services.AddLogging();
+		services.AddReceiptAnswerGeneration(configuration);
+		services.RemoveAll<IHttpClientFactory>();
+		services.AddSingleton<IHttpClientFactory>(
+			new TestHttpClientFactory(new HttpClient(httpHandler)));
+		return services.BuildServiceProvider();
+	}
 
 	private static SearchIndexMatch Match(
 		Guid receiptId,

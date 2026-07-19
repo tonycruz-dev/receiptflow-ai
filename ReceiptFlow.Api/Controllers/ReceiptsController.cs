@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ReceiptFlow.Application.Receipts.CreateReceipt;
+using ReceiptFlow.Application.Receipts.Confirmation;
 using ReceiptFlow.Application.Receipts.Documents;
 using ReceiptFlow.Application.Receipts.GetReceipt;
 using ReceiptFlow.Application.Receipts.ListReceipts;
@@ -13,6 +14,7 @@ namespace ReceiptFlow.Api.Controllers;
 [Route("api/receipts")]
 public sealed class ReceiptsController(
 	CreateReceiptHandler createReceiptHandler,
+	ConfirmReceiptHandler confirmReceiptHandler,
 	GetReceiptHandler getReceiptHandler,
 	ListReceiptsHandler listReceiptsHandler,
 	UploadReceiptDocumentHandler uploadReceiptDocumentHandler,
@@ -21,6 +23,9 @@ public sealed class ReceiptsController(
 	ReindexReceiptDocumentHandler reindexReceiptDocumentHandler)
 	: ControllerBase
 {
+	private const long MaximumReceiptFileSize = 10 * 1024 * 1024;
+	private const long MultipartOverheadAllowance = 64 * 1024;
+
 	[HttpGet]
 	[ProducesResponseType<ReceiptListResponse>(StatusCodes.Status200OK)]
 	[ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -60,6 +65,44 @@ public sealed class ReceiptsController(
 			receipt);
 	}
 
+	[HttpPost("import")]
+	[Consumes("multipart/form-data")]
+	[RequestSizeLimit(MaximumReceiptFileSize + MultipartOverheadAllowance)]
+	public async Task<IActionResult> Import(
+		IFormFile? file,
+		CancellationToken cancellationToken)
+	{
+		if (file is null)
+			return InvalidFile();
+
+		await using var content = file.OpenReadStream();
+		var result = await uploadReceiptDocumentHandler.ImportAsync(
+			new ImportReceiptDocumentCommand(
+				content,
+				file.FileName,
+				file.ContentType,
+				file.Length),
+			cancellationToken);
+
+		return result.Status switch
+		{
+			UploadReceiptDocumentStatus.Success => Accepted(new
+			{
+				receiptId = result.ReceiptId,
+				documentId = result.DocumentId,
+				processingStatus = result.ProcessingStatus?.ToString()
+			}),
+			UploadReceiptDocumentStatus.FileTooLarge => StatusCode(
+				StatusCodes.Status413PayloadTooLarge,
+				new ProblemDetails
+				{
+					Title = "The uploaded file is too large.",
+					Status = StatusCodes.Status413PayloadTooLarge
+				}),
+			_ => InvalidFile()
+		};
+	}
+
 	[HttpGet("{id:guid}")]
 	public async Task<IActionResult> Get(
 		Guid id,
@@ -74,9 +117,38 @@ public sealed class ReceiptsController(
 			: Ok(receipt);
 	}
 
+	[HttpPut("{receiptId:guid}/confirmation")]
+	public async Task<IActionResult> Confirm(
+		Guid receiptId,
+		ConfirmReceiptRequest request,
+		CancellationToken cancellationToken)
+	{
+		var result = await confirmReceiptHandler.HandleAsync(
+			receiptId,
+			request,
+			cancellationToken);
+
+		return result.Status switch
+		{
+			ConfirmReceiptStatus.Success => Ok(result.Receipt),
+			ConfirmReceiptStatus.NotFound => NotFound(),
+			ConfirmReceiptStatus.NotReady => Conflict(new ProblemDetails
+			{
+				Title = "The receipt is not ready for confirmation.",
+				Status = StatusCodes.Status409Conflict
+			}),
+			_ => BadRequest(new ProblemDetails
+			{
+				Title = "The receipt confirmation is invalid.",
+				Detail = result.Error,
+				Status = StatusCodes.Status400BadRequest
+			})
+		};
+	}
+
 	[HttpPost("{receiptId:guid}/documents")]
 	[Consumes("multipart/form-data")]
-	[RequestSizeLimit(10 * 1024 * 1024)]
+	[RequestSizeLimit(MaximumReceiptFileSize + MultipartOverheadAllowance)]
 	public async Task<IActionResult> UploadDocument(
 		Guid receiptId,
 		IFormFile? file,

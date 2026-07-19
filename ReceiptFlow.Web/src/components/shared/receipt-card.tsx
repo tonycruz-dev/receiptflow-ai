@@ -7,9 +7,9 @@ import { formatCurrency } from '@/lib/utils';
 export interface ReceiptCardData {
   id: string;
   merchant: string;
-  date: string;
-  total: number;
-  currency?: string;
+  date: string | null;
+  total: number | null;
+  currency: string | null;
   status: ReceiptStatus;
   fileName: string;
 }
@@ -40,19 +40,25 @@ export function ReceiptCard({ receipt }: ReceiptCardProps) {
             </div>
           </div>
           <p className="shrink-0 font-bold tabular-nums">
-            {formatCurrency(receipt.total, receipt.currency)}
+            {receipt.total === null || receipt.currency === null
+              ? '—'
+              : formatCurrency(receipt.total, receipt.currency)}
           </p>
         </div>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <CalendarDays aria-hidden="true" className="size-3.5" />
-            <time dateTime={receipt.date}>
-              {new Intl.DateTimeFormat('en-GB', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-              }).format(new Date(receipt.date))}
-            </time>
+            {receipt.date ? (
+              <time dateTime={receipt.date}>
+                {new Intl.DateTimeFormat('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                }).format(new Date(receipt.date))}
+              </time>
+            ) : (
+              <span>Date pending</span>
+            )}
           </div>
           <StatusBadge status={receipt.status} />
         </div>

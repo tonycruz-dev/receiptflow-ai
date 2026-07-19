@@ -59,7 +59,9 @@ public sealed class DashboardAndReceiptListTests
 			});
 		Assert.DoesNotContain(
 			dashboard.RecentReceipts,
-			receipt => receipt.MerchantName.Contains("Alice", StringComparison.Ordinal));
+			receipt => receipt.MerchantName?.Contains(
+				"Alice",
+				StringComparison.Ordinal) == true);
 	}
 
 	[Fact]
@@ -123,6 +125,31 @@ public sealed class DashboardAndReceiptListTests
 	}
 
 	[Fact]
+	public async Task Dashboard_UnconfirmedDraftDoesNotAffectSpending()
+	{
+		await using var factory = new ReceiptFlowApiFactory();
+		var confirmed = CreateReceipt(
+			"bob",
+			"Confirmed merchant",
+			DateTimeOffset.UtcNow.AddDays(-1),
+			25m,
+			"GBP");
+		var draft = Receipt.CreateDraft("bob");
+		draft.BeginProcessing();
+		await SeedAsync(factory, [confirmed, draft]);
+		using var client = factory.CreateAuthenticatedClient("bob");
+
+		var dashboard = await client.GetFromJsonAsync<DashboardResponse>(
+			"/api/dashboard");
+
+		Assert.NotNull(dashboard);
+		Assert.Equal(2, dashboard.TotalReceipts);
+		var spending = Assert.Single(dashboard.SpendingByCurrency);
+		Assert.Equal("GBP", spending.Currency);
+		Assert.Equal(25m, spending.Amount);
+	}
+
+	[Fact]
 	public async Task ReceiptList_IsOwnerScopedAndPaginated()
 	{
 		await using var factory = new ReceiptFlowApiFactory();
@@ -151,7 +178,9 @@ public sealed class DashboardAndReceiptListTests
 		Assert.Equal("Bob Oldest", secondPage.Items[0].MerchantName);
 		Assert.DoesNotContain(
 			firstPage.Items.Concat(secondPage.Items),
-			receipt => receipt.MerchantName.Contains("Alice", StringComparison.Ordinal));
+			receipt => receipt.MerchantName?.Contains(
+				"Alice",
+				StringComparison.Ordinal) == true);
 	}
 
 	[Fact]

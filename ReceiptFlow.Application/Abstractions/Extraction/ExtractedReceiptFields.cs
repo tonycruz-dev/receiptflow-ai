@@ -6,4 +6,5 @@ public sealed record ExtractedReceiptFields(
 	decimal? Subtotal,
 	decimal? Tax,
 	decimal? Total,
-	string? Currency);
+	string? Currency,
+	string? Category = null);

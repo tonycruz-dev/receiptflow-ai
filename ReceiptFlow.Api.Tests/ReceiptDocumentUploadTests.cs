@@ -1,14 +1,66 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using ReceiptFlow.Application.Receipts;
 using ReceiptFlow.Application.Receipts.CreateReceipt;
+using ReceiptFlow.Domain.Enums;
 using ReceiptFlow.Infrastructure.Persistence;
 
 namespace ReceiptFlow.Api.Tests;
 
 public sealed class ReceiptDocumentUploadTests
 {
+	[Fact]
+	public async Task Import_CreatesOwnedProcessingDraftWithoutInventedMetadata()
+	{
+		await using var factory = new ReceiptFlowApiFactory();
+		using var client = factory.CreateAuthenticatedClient("user-a");
+
+		var response = await client.PostAsync(
+			"/api/receipts/import",
+			CreateMultipart("receipt.pdf", "application/pdf", ValidPdf()));
+
+		Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+		var result = await response.Content.ReadFromJsonAsync<ImportResponse>();
+		Assert.NotNull(result);
+		Assert.Equal("Pending", result.ProcessingStatus);
+
+		using var scope = factory.Services.CreateScope();
+		var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+		var receipt = await dbContext.Receipts
+			.Include(candidate => candidate.Documents)
+			.SingleAsync(candidate => candidate.Id == result.ReceiptId);
+		Assert.Equal("user-a", receipt.OwnerUserId);
+		Assert.Equal(ReceiptLifecycleStatus.Processing, receipt.LifecycleStatus);
+		Assert.Null(receipt.MerchantName);
+		Assert.Null(receipt.PurchaseDate);
+		Assert.Null(receipt.SubtotalAmount);
+		Assert.Null(receipt.TaxAmount);
+		Assert.Null(receipt.TotalAmount);
+		Assert.Null(receipt.Currency);
+		Assert.Null(receipt.Category);
+		Assert.Equal(result.DocumentId, Assert.Single(receipt.Documents).Id);
+
+		using var otherClient = factory.CreateAuthenticatedClient("user-b");
+		Assert.Equal(
+			HttpStatusCode.NotFound,
+			(await otherClient.GetAsync($"/api/receipts/{result.ReceiptId}")).StatusCode);
+	}
+
+	[Fact]
+	public async Task UnauthenticatedImport_ReturnsUnauthorized()
+	{
+		await using var factory = new ReceiptFlowApiFactory();
+		using var client = factory.CreateClient();
+
+		var response = await client.PostAsync(
+			"/api/receipts/import",
+			CreateMultipart("receipt.jpg", "image/jpeg", ValidJpeg()));
+
+		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+	}
+
 	[Fact]
 	public async Task UnauthenticatedUpload_ReturnsUnauthorized()
 	{
@@ -81,6 +133,22 @@ public sealed class ReceiptDocumentUploadTests
 		Assert.Equal(
 			HttpStatusCode.RequestEntityTooLarge,
 			response.StatusCode);
+	}
+
+	[Fact]
+	public async Task FileAtMaximumSize_IsAccepted()
+	{
+		await using var factory = new ReceiptFlowApiFactory();
+		using var client = factory.CreateAuthenticatedClient("user-a");
+		var receipt = await CreateReceiptAsync(client);
+		var content = new byte[10 * 1024 * 1024];
+		Array.Copy(ValidJpeg(), content, ValidJpeg().Length);
+
+		var response = await client.PostAsync(
+			$"/api/receipts/{receipt.Id}/documents",
+			CreateMultipart("receipt.jpg", "image/jpeg", content));
+
+		Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 	}
 
 	[Fact]
@@ -218,5 +286,10 @@ public sealed class ReceiptDocumentUploadTests
 		string OriginalFileName,
 		string ContentType,
 		long FileSize,
+		string ProcessingStatus);
+
+	private sealed record ImportResponse(
+		Guid ReceiptId,
+		Guid DocumentId,
 		string ProcessingStatus);
 }

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using ReceiptFlow.Application.Abstractions.Assistant;
 using ReceiptFlow.Application.Abstractions.Authentication;
 using ReceiptFlow.Application.Search.Receipts;
@@ -8,7 +9,8 @@ namespace ReceiptFlow.Application.Assistant.Receipts;
 public sealed partial class AskReceiptQuestionHandler(
 	ICurrentUser currentUser,
 	ReceiptSearchHandler searchHandler,
-	IReceiptAnswerGenerator answerGenerator)
+	IReceiptAnswerGenerator answerGenerator,
+	ILogger<AskReceiptQuestionHandler> logger)
 {
 	public const int MaximumQuestionLength = 1000;
 	public const int MaximumRetrievedChunks = 5;
@@ -47,22 +49,50 @@ public sealed partial class AskReceiptQuestionHandler(
 		var allowed = selected
 			.Select(item => item.Evidence.Citation)
 			.ToHashSet();
-		var declared = generated.CitationIdentifiers
+		var declared = generated.CitationIdentifiers;
+		var validated = declared
 			.Where(allowed.Contains)
 			.ToHashSet();
-		var answer = RemoveUnknownCitations(generated.Answer, declared);
+
+		if (validated.Count == 0)
+		{
+			var fallbackCitation = selected[0].Evidence.Citation;
+			validated.Add(fallbackCitation);
+			logger.LogWarning(
+				"Receipt answer citation compliance fallback used. Retrieved match count {RetrievedMatchCount}, evidence count {EvidenceCount}, declared citation count {DeclaredCitationCount}, valid citation count 0.",
+				search.Matches.Count,
+				selected.Count,
+				declared.Count);
+		}
+
+		var answer = RemoveUnknownCitations(generated.Answer, validated).Trim();
 		var citedInAnswer = CitationPattern()
 			.Matches(answer)
 			.Select(match => int.Parse(match.Groups[1].Value))
-			.Where(citation => allowed.Contains(citation) && declared.Contains(citation))
+			.Where(validated.Contains)
 			.ToHashSet();
+		if (citedInAnswer.Count == 0)
+		{
+			answer = string.Concat(
+				answer,
+				" ",
+				string.Join(" ", validated.Order().Select(citation => $"[{citation}]")));
+		}
 
 		var sources = selected
-			.Where(item => citedInAnswer.Contains(item.Evidence.Citation))
+			.Where(item => validated.Contains(item.Evidence.Citation))
 			.Select(item => item.Source)
 			.ToArray();
 
-		return new AskReceiptQuestionResponse(answer.Trim(), sources);
+		logger.LogInformation(
+			"Receipt answer citation validation completed. Retrieved match count {RetrievedMatchCount}, evidence count {EvidenceCount}, declared citation count {DeclaredCitationCount}, valid citation count {ValidCitationCount}, returned source count {ReturnedSourceCount}.",
+			search.Matches.Count,
+			selected.Count,
+			declared.Count,
+			validated.Count,
+			sources.Length);
+
+		return new AskReceiptQuestionResponse(answer, sources);
 	}
 
 	private static IReadOnlyList<SelectedEvidence> SelectEvidence(

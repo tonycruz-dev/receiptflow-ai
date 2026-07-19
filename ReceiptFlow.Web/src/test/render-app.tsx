@@ -28,6 +28,25 @@ export function createMockApiClient(
       total: 0,
       items: [],
     }),
+    createReceipt: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    getReceipt: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    uploadReceiptDocument: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    importReceipt: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    confirmReceipt: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    listReceiptDocuments: vi.fn().mockResolvedValue([]),
+    getReceiptDocument: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
     searchReceipts: vi.fn().mockResolvedValue({
       page: 1,
       pageSize: 10,

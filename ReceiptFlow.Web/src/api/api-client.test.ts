@@ -78,6 +78,129 @@ describe('authenticated API client', () => {
     );
   });
 
+  it('uploads multipart field file without overriding the browser boundary', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          documentId: 'document-1',
+          receiptId: 'receipt-1',
+          originalFileName: 'receipt.pdf',
+          contentType: 'application/pdf',
+          fileSize: 8,
+          processingStatus: 'Pending',
+        },
+        201,
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      getAccessToken: vi.fn().mockResolvedValue('token'),
+      onUnauthorized: vi.fn(),
+      fetchImplementation: fetchMock,
+    });
+    const file = new File(['%PDF-1.7'], 'receipt.pdf', {
+      type: 'application/pdf',
+    });
+
+    await client.uploadReceiptDocument('receipt-1', file);
+
+    const request = fetchMock.mock.calls[0]?.[1];
+    const headers = new Headers(request?.headers);
+    expect(headers.has('Content-Type')).toBe(false);
+    expect(request?.body).toBeInstanceOf(FormData);
+    expect((request?.body as FormData).get('file')).toBe(file);
+  });
+
+  it('imports a receipt as file-only multipart data', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          receiptId: 'receipt-1',
+          documentId: 'document-1',
+          processingStatus: 'Pending',
+        },
+        202,
+      ),
+    );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      getAccessToken: vi.fn().mockResolvedValue('token'),
+      onUnauthorized: vi.fn(),
+      fetchImplementation: fetchMock,
+    });
+    const file = new File(['%PDF-1.7'], 'receipt.pdf', {
+      type: 'application/pdf',
+    });
+
+    await client.importReceipt(file);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://api.example.test/api/receipts/import',
+    );
+    const request = fetchMock.mock.calls[0]?.[1];
+    expect(request?.method).toBe('POST');
+    expect(new Headers(request?.headers).has('Content-Type')).toBe(false);
+    const form = request?.body as FormData;
+    expect([...form.keys()]).toEqual(['file']);
+    expect(form.get('file')).toBe(file);
+  });
+
+  it('submits corrected receipt confirmation with PUT', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        jsonResponse({ id: 'receipt-1', lifecycleStatus: 'Confirmed' }),
+      );
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      getAccessToken: vi.fn().mockResolvedValue('token'),
+      onUnauthorized: vi.fn(),
+      fetchImplementation: fetchMock,
+    });
+    const confirmation = {
+      merchantName: 'Corrected Shop',
+      purchaseDate: '2026-07-18T12:00:00Z',
+      subtotal: 10,
+      tax: 2,
+      totalAmount: 12,
+      currency: 'GBP',
+      category: 'Food',
+      lineItems: [],
+    };
+
+    await client.confirmReceipt('receipt-1', confirmation);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://api.example.test/api/receipts/receipt-1/confirmation',
+    );
+    const request = fetchMock.mock.calls[0]?.[1];
+    expect(request?.method).toBe('PUT');
+    expect(request?.body).toBe(JSON.stringify(confirmation));
+  });
+
+  it('coordinates upload re-authentication only for 401, not 403', async () => {
+    const onUnauthorized = vi.fn().mockResolvedValue(undefined);
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 403 }));
+    const client = createApiClient({
+      baseUrl: 'https://api.example.test',
+      getAccessToken: vi.fn().mockResolvedValue('token'),
+      onUnauthorized,
+      fetchImplementation: fetchMock,
+    });
+    const file = new File(['%PDF'], 'receipt.pdf', { type: 'application/pdf' });
+
+    await expect(
+      client.uploadReceiptDocument('receipt-1', file),
+    ).rejects.toMatchObject({ status: 401 });
+    await expect(
+      client.uploadReceiptDocument('receipt-1', file),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+  });
+
   it('parses ProblemDetails and triggers controlled re-authentication on 401', async () => {
     const onUnauthorized = vi.fn().mockResolvedValue(undefined);
     const client = createApiClient({

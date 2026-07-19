@@ -1,16 +1,21 @@
-import { FileText } from 'lucide-react';
+import { ArrowRight, FileText } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 
 interface SourceCitationCardProps {
   title: string;
   reference: string;
   excerpt?: string;
+  receiptId?: string;
+  documentId?: string;
 }
 
 export function SourceCitationCard({
   title,
   excerpt,
   reference,
+  receiptId,
+  documentId,
 }: SourceCitationCardProps) {
   return (
     <Card>
@@ -25,6 +30,16 @@ export function SourceCitationCard({
           </div>
           {excerpt ? (
             <p className="mt-2 text-sm text-muted-foreground">{excerpt}</p>
+          ) : null}
+          {receiptId ? (
+            <Link
+              to={`/receipts/${receiptId}`}
+              state={documentId ? { documentId } : undefined}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-sm text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              View receipt
+              <ArrowRight aria-hidden="true" className="size-3.5" />
+            </Link>
           ) : null}
         </div>
       </CardContent>

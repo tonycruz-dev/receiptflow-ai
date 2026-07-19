@@ -9,6 +9,8 @@ public sealed record ReceiptDocumentDetailResponse(
 	DateTimeOffset UploadedAtUtc,
 	string ProcessingStatus,
 	string? ProcessingError,
+	string ReceiptLifecycleStatus,
+	bool ConfirmationRequired,
 	ReceiptDocumentExtractionResponse? Extraction);
 
 public sealed record ReceiptDocumentExtractionResponse(
@@ -18,6 +20,7 @@ public sealed record ReceiptDocumentExtractionResponse(
 	decimal? Tax,
 	decimal? Total,
 	string? Currency,
+	string? Category,
 	decimal? OverallConfidence,
 	string Provider,
 	string ModelId,

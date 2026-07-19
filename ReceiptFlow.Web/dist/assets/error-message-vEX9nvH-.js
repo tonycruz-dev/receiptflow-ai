@@ -1,0 +1,1 @@
+import{a as e}from"./index-B5RTi4yk.js";function t(t,n=`The request could not be completed. Please try again.`){return t instanceof e?t.problem?.detail??t.problem?.title??n:n}export{t};

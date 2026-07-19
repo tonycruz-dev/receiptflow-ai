@@ -66,7 +66,8 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 
 		if (document?.Receipt is null ||
 			document.Extraction is null ||
-			document.ProcessingStatus != DocumentProcessingStatus.Completed)
+			document.ProcessingStatus != DocumentProcessingStatus.Completed ||
+			document.Receipt.LifecycleStatus != ReceiptLifecycleStatus.Confirmed)
 		{
 			return;
 		}
@@ -85,17 +86,26 @@ public sealed class ReceiptDocumentExtractionCompletedConsumer(
 			return;
 		}
 
+		if (document.Receipt.MerchantName is null ||
+			document.Receipt.PurchaseDate is null ||
+			document.Receipt.Currency is null ||
+			document.Receipt.Category is null ||
+			document.Receipt.TotalAmount is null)
+		{
+			return;
+		}
+
 		var source = new ReceiptSearchSource(
 			document.Receipt.Id,
 			document.Id,
 			document.OwnerUserId,
-			document.Extraction.MerchantName ?? document.Receipt.MerchantName,
-			document.Extraction.TransactionDate ?? document.Receipt.PurchaseDate,
+			document.Receipt.MerchantName,
+			document.Receipt.PurchaseDate,
 			document.Receipt.Category,
-			document.Extraction.Currency ?? document.Receipt.Currency,
-			document.Extraction.Subtotal ?? document.Receipt.SubtotalAmount,
-			document.Extraction.Tax ?? document.Receipt.TaxAmount,
-			document.Extraction.Total ?? document.Receipt.TotalAmount,
+			document.Receipt.Currency,
+			document.Receipt.SubtotalAmount,
+			document.Receipt.TaxAmount,
+			document.Receipt.TotalAmount,
 			document.Extraction.ExtractedAtUtc,
 			document.Extraction.RawText,
 			document.Receipt.LineItems

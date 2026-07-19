@@ -92,6 +92,44 @@ public sealed class ReceiptDocumentExtractionTests
 	}
 
 	[Fact]
+	public async Task DraftExtraction_TransitionsToReviewWithoutIndexing()
+	{
+		await using var dbContext = CreateDbContext();
+		var document = AddDraftDocument(dbContext, "image/jpeg");
+		var publisher = new FakeReceiptDocumentEventPublisher();
+		var consumer = CreateConsumer(dbContext, publisher: publisher);
+
+		await consumer.HandleAsync(CreateMessage(document));
+
+		var receipt = await dbContext.Receipts
+			.Include(candidate => candidate.LineItems)
+			.SingleAsync(candidate => candidate.Id == document.ReceiptId);
+		Assert.Equal(ReceiptLifecycleStatus.ReviewRequired, receipt.LifecycleStatus);
+		Assert.Null(receipt.MerchantName);
+		Assert.Null(receipt.TotalAmount);
+		Assert.Single(receipt.LineItems);
+		Assert.Empty(publisher.ExtractionCompletedMessages);
+	}
+
+	[Fact]
+	public async Task DraftPermanentFailure_TransitionsToRecoverableFailedState()
+	{
+		await using var dbContext = CreateDbContext();
+		var document = AddDraftDocument(dbContext, "image/jpeg");
+		var consumer = CreateConsumer(
+			dbContext,
+			new FakeDocumentExtractor(permanentFailure: true));
+
+		await consumer.HandleAsync(CreateMessage(document));
+
+		var receipt = await dbContext.Receipts.SingleAsync(
+			candidate => candidate.Id == document.ReceiptId);
+		Assert.Equal(ReceiptLifecycleStatus.Failed, receipt.LifecycleStatus);
+		receipt.BeginProcessing();
+		Assert.Equal(ReceiptLifecycleStatus.Processing, receipt.LifecycleStatus);
+	}
+
+	[Fact]
 	public async Task PermanentFailure_DoesNotPublishExtractionCompleted()
 	{
 		await using var dbContext = CreateDbContext();
@@ -208,6 +246,26 @@ public sealed class ReceiptDocumentExtractionTests
 		return document;
 	}
 
+	private static Document AddDraftDocument(
+		ApplicationDbContext dbContext,
+		string contentType)
+	{
+		var receipt = Receipt.CreateDraft("user-a");
+		receipt.BeginProcessing();
+		var document = new Document(
+			"user-a",
+			"receipt",
+			"stored/receipt",
+			contentType,
+			4,
+			DocumentType.ReceiptImage,
+			new string('a', 64));
+		receipt.AddDocument(document);
+		dbContext.Receipts.Add(receipt);
+		dbContext.SaveChanges();
+		return document;
+	}
+
 	private static Task<Document> LoadDocumentAsync(
 		ApplicationDbContext dbContext,
 		Guid documentId)
@@ -287,7 +345,8 @@ public sealed class ReceiptDocumentExtractionTests
 						10,
 						2,
 						12,
-						"GBP"),
+						"GBP",
+						"Groceries"),
 					[
 						new ExtractedReceiptLineItem(
 							"Milk",

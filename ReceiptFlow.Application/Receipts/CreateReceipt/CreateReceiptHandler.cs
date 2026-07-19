@@ -46,6 +46,8 @@ public sealed class CreateReceiptHandler(
 			receipt.TotalAmount,
 			receipt.Currency,
 			receipt.Category,
-			receipt.CreatedAtUtc);
+			receipt.LifecycleStatus.ToString(),
+			receipt.CreatedAtUtc,
+			[]);
 	}
 }

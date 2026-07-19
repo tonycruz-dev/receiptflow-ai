@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { createMockApiClient, renderApp } from '@/test/render-app';
@@ -19,7 +19,21 @@ describe('Receipt assistant page', () => {
         },
       ],
     });
-    renderApp('/assistant', createMockApiClient({ askReceiptQuestion }));
+    const listReceiptDocuments = vi.fn().mockResolvedValue([
+      {
+        documentId: 'document-1',
+        originalFileName: 'northstar-receipt.pdf',
+        contentType: 'application/pdf',
+        fileSize: 1234,
+        uploadedAtUtc: '2026-07-01T12:00:00Z',
+        processingStatus: 'Completed',
+        hasExtraction: true,
+      },
+    ]);
+    const { router } = renderApp(
+      '/assistant',
+      createMockApiClient({ askReceiptQuestion, listReceiptDocuments }),
+    );
     const user = userEvent.setup();
     await screen.findByRole('heading', { name: 'AI receipt assistant' });
 
@@ -40,6 +54,17 @@ describe('Receipt assistant page', () => {
     ).toBeVisible();
     expect(screen.getByText('Cable Store')).toBeVisible();
     expect(screen.getByText(/Source \[1\]/)).toBeVisible();
+    expect(
+      screen.getByText('Source file: northstar-receipt.pdf'),
+    ).toBeVisible();
+    const sourceLink = screen.getByRole('link', { name: 'View receipt' });
+    expect(sourceLink).toHaveAttribute('href', '/receipts/receipt-1');
+
+    await user.click(sourceLink);
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/receipts/receipt-1');
+    });
+    expect(router.state.location.state).toEqual({ documentId: 'document-1' });
   });
 
   it('renders an empty-evidence response without invented sources', async () => {

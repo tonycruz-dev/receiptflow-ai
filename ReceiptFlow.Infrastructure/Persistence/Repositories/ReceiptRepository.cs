@@ -65,7 +65,7 @@ internal sealed class ReceiptRepository(
 			.Where(receipt =>
 				receipt.OwnerUserId == ownerUserId)
 			.OrderByDescending(receipt =>
-				receipt.PurchaseDate)
+				receipt.PurchaseDate ?? receipt.CreatedAtUtc)
 			.ToListAsync(cancellationToken);
 	}
 
@@ -80,17 +80,21 @@ internal sealed class ReceiptRepository(
 
 		var totalReceipts = await ownedReceipts.CountAsync(cancellationToken);
 		var spendingTotals = await ownedReceipts
+			.Where(receipt =>
+				receipt.LifecycleStatus == ReceiptLifecycleStatus.Confirmed &&
+				receipt.Currency != null &&
+				receipt.TotalAmount != null)
 			.GroupBy(receipt => receipt.Currency)
 			.Select(group => new
 			{
 				Currency = group.Key,
-				Amount = group.Sum(receipt => receipt.TotalAmount)
+				Amount = group.Sum(receipt => receipt.TotalAmount!.Value)
 			})
 			.OrderBy(total => total.Currency)
 			.ToListAsync(cancellationToken);
 		var spendingByCurrency = spendingTotals
 			.Select(total => new CurrencyAmountResponse(
-				total.Currency,
+					total.Currency!,
 				total.Amount))
 			.ToList();
 		var documentsProcessing = await dbContext.Documents
@@ -139,7 +143,7 @@ internal sealed class ReceiptRepository(
 		IQueryable<Receipt> receipts)
 	{
 		return receipts
-			.OrderByDescending(receipt => receipt.PurchaseDate)
+			.OrderByDescending(receipt => receipt.PurchaseDate ?? receipt.CreatedAtUtc)
 			.ThenByDescending(receipt => receipt.CreatedAtUtc)
 			.ThenByDescending(receipt => receipt.Id)
 			.Select(receipt => new ReceiptSummaryProjection(
@@ -149,6 +153,7 @@ internal sealed class ReceiptRepository(
 				receipt.TotalAmount,
 				receipt.Currency,
 				receipt.Category,
+				receipt.LifecycleStatus,
 				receipt.Documents
 					.OrderByDescending(document => document.CreatedAtUtc)
 					.ThenByDescending(document => document.Id)
@@ -176,6 +181,7 @@ internal sealed class ReceiptRepository(
 			receipt.TotalAmount,
 			receipt.Currency,
 			receipt.Category,
+			receipt.LifecycleStatus.ToString(),
 			receipt.DocumentId,
 			receipt.OriginalFileName,
 			receipt.ProcessingStatus?.ToString());
@@ -183,11 +189,12 @@ internal sealed class ReceiptRepository(
 
 	private sealed record ReceiptSummaryProjection(
 		Guid ReceiptId,
-		string MerchantName,
-		DateTimeOffset PurchaseDate,
-		decimal TotalAmount,
-		string Currency,
-		string Category,
+		string? MerchantName,
+		DateTimeOffset? PurchaseDate,
+		decimal? TotalAmount,
+		string? Currency,
+		string? Category,
+		ReceiptLifecycleStatus LifecycleStatus,
 		Guid? DocumentId,
 		string? OriginalFileName,
 		DocumentProcessingStatus? ProcessingStatus);

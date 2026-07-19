@@ -19,7 +19,8 @@ public sealed class DocumentExtraction
 		decimal? overallConfidence,
 		string provider,
 		string modelId,
-		string? structuredDataJson)
+		string? structuredDataJson,
+		string? category = null)
 	{
 		if (documentId == Guid.Empty)
 			throw new ArgumentException(
@@ -49,6 +50,7 @@ public sealed class DocumentExtraction
 		Provider = provider.Trim();
 		ModelId = modelId.Trim();
 		StructuredDataJson = structuredDataJson;
+		Category = string.IsNullOrWhiteSpace(category) ? null : category.Trim();
 		ExtractedAtUtc = DateTimeOffset.UtcNow;
 	}
 
@@ -69,6 +71,8 @@ public sealed class DocumentExtraction
 	public decimal? Total { get; private set; }
 
 	public string? Currency { get; private set; }
+
+	public string? Category { get; private set; }
 
 	public decimal? OverallConfidence { get; private set; }
 

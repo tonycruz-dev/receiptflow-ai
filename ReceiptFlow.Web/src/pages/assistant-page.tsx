@@ -1,8 +1,12 @@
 import { useMutation } from '@tanstack/react-query';
 import { ArrowUp, Bot, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
-import type { AskReceiptQuestionRequest } from '@/api/contracts';
+import type {
+  AskReceiptQuestionRequest,
+  ReceiptAnswerSource,
+} from '@/api/contracts';
 import { getSafeErrorMessage } from '@/api/error-message';
+import { useReceiptDocuments } from '@/api/use-receipt';
 import { AnswerCard } from '@/components/shared/answer-card';
 import { EmptyState } from '@/components/shared/empty-state';
 import { ErrorState } from '@/components/shared/error-state';
@@ -81,13 +85,9 @@ export function Component() {
           sources={
             assistant.data.sources.length > 0 ? (
               assistant.data.sources.map((source) => (
-                <SourceCitationCard
+                <AssistantSource
                   key={`${source.documentId}-${source.citation.toString()}`}
-                  title={
-                    source.merchantName ??
-                    `Receipt source ${source.citation.toString()}`
-                  }
-                  reference={formatSourceReference(source)}
+                  source={source}
                 />
               ))
             ) : (
@@ -141,6 +141,25 @@ export function Component() {
         </div>
       </form>
     </div>
+  );
+}
+
+function AssistantSource({ source }: { source: ReceiptAnswerSource }) {
+  const documents = useReceiptDocuments(source.receiptId);
+  const fileName = documents.data?.find(
+    (document) => document.documentId === source.documentId,
+  )?.originalFileName;
+
+  return (
+    <SourceCitationCard
+      title={
+        source.merchantName ?? `Receipt source ${source.citation.toString()}`
+      }
+      reference={formatSourceReference(source)}
+      {...(fileName ? { excerpt: `Source file: ${fileName}` } : {})}
+      receiptId={source.receiptId}
+      documentId={source.documentId}
+    />
   );
 }
 

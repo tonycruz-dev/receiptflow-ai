@@ -24,17 +24,9 @@ public sealed class UploadReceiptDocumentHandler(
 		if (!currentUser.IsAuthenticated)
 			throw new UnauthorizedAccessException();
 
-		if (!command.Content.CanSeek ||
-			command.FileSize <= 0 ||
-			command.Content.Length == 0 ||
-			string.IsNullOrWhiteSpace(command.FileName) ||
-			string.IsNullOrWhiteSpace(command.ContentType))
-		{
-			return UploadReceiptDocumentResult.InvalidFile();
-		}
-
-		if (command.FileSize > MaximumFileSize)
-			return UploadReceiptDocumentResult.FileTooLarge();
+		var validation = Validate(command);
+		if (validation is not null)
+			return validation;
 
 		var fileKind = await IdentifyFileKindAsync(
 			command,
@@ -50,6 +42,53 @@ public sealed class UploadReceiptDocumentHandler(
 
 		if (receipt is null)
 			return UploadReceiptDocumentResult.ReceiptNotFound();
+
+		receipt.BeginProcessing();
+		return await StoreAndPersistAsync(
+			receipt,
+			command,
+			fileKind,
+			cancellationToken);
+	}
+
+	public async Task<UploadReceiptDocumentResult> ImportAsync(
+		ImportReceiptDocumentCommand command,
+		CancellationToken cancellationToken = default)
+	{
+		if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId))
+			throw new UnauthorizedAccessException();
+
+		var upload = new UploadReceiptDocumentCommand(
+			Guid.Empty,
+			command.Content,
+			command.FileName,
+			command.ContentType,
+			command.FileSize);
+		var validation = Validate(upload);
+		if (validation is not null)
+			return validation;
+
+		var fileKind = await IdentifyFileKindAsync(upload, cancellationToken);
+		if (fileKind is null)
+			return UploadReceiptDocumentResult.InvalidFile();
+
+		var receipt = Receipt.CreateDraft(currentUser.UserId);
+		receipt.BeginProcessing();
+		await receiptRepository.AddAsync(receipt, cancellationToken);
+
+		return await StoreAndPersistAsync(
+			receipt,
+			upload,
+			fileKind,
+			cancellationToken);
+	}
+
+	private async Task<UploadReceiptDocumentResult> StoreAndPersistAsync(
+		Receipt receipt,
+		UploadReceiptDocumentCommand command,
+		AllowedFileKind fileKind,
+		CancellationToken cancellationToken)
+	{
 
 		command.Content.Position = 0;
 		var storedDocument = await documentStorage.SaveAsync(
@@ -100,6 +139,23 @@ public sealed class UploadReceiptDocumentHandler(
 			document.ContentType,
 			document.SizeBytes,
 			document.ProcessingStatus);
+	}
+
+	private static UploadReceiptDocumentResult? Validate(
+		UploadReceiptDocumentCommand command)
+	{
+		if (!command.Content.CanSeek ||
+			command.FileSize <= 0 ||
+			command.Content.Length == 0 ||
+			string.IsNullOrWhiteSpace(command.FileName) ||
+			string.IsNullOrWhiteSpace(command.ContentType))
+		{
+			return UploadReceiptDocumentResult.InvalidFile();
+		}
+
+		return command.FileSize > MaximumFileSize
+			? UploadReceiptDocumentResult.FileTooLarge()
+			: null;
 	}
 
 	private static async Task<AllowedFileKind?> IdentifyFileKindAsync(

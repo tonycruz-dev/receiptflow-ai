@@ -18,6 +18,7 @@ describe('Receipts page', () => {
           totalAmount: 47.86,
           currency: 'EUR',
           category: 'Groceries',
+          lifecycleStatus: 'Processing',
           documentId: 'document-live',
           originalFileName: 'real-receipt.jpg',
           processingStatus: 'Queued',

@@ -85,7 +85,12 @@ public sealed class ReceiptDocumentUploadedConsumer(
 			var extraction = PersistExtraction(document, result);
 			document.MarkCompleted();
 
-			if (extraction is not null && HasSearchableContent(result))
+			if (document.Receipt?.LifecycleStatus == ReceiptLifecycleStatus.Processing)
+				document.Receipt.MarkReviewRequired();
+
+			if (extraction is not null &&
+				document.Receipt?.LifecycleStatus == ReceiptLifecycleStatus.Confirmed &&
+				HasSearchableContent(result))
 			{
 				await eventPublisher.PublishAsync(
 					new ReceiptDocumentExtractionCompletedV1(
@@ -118,6 +123,8 @@ public sealed class ReceiptDocumentUploadedConsumer(
 				: "Document extraction failed.";
 
 			document.MarkFailed(summary);
+			if (document.Receipt?.LifecycleStatus == ReceiptLifecycleStatus.Processing)
+				document.Receipt.MarkFailed();
 			await dbContext.SaveChangesAsync(CancellationToken.None);
 
 			logger.LogWarning(
@@ -156,7 +163,8 @@ public sealed class ReceiptDocumentUploadedConsumer(
 			result.OverallConfidence,
 			result.Provider,
 			result.ModelId,
-			result.StructuredDataJson);
+			result.StructuredDataJson,
+			result.Fields.Category);
 
 		dbContext.DocumentExtractions.Add(extraction);
 
