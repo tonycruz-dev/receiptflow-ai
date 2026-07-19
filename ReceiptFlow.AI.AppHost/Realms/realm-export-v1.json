@@ -317,7 +317,6 @@
           "attributes": {}
         }
       ],
-      "receiptflow-api": [],
       "receiptflow-mobile": [],
       "account": [
         {
@@ -726,15 +725,11 @@
       "protocol": "openid-connect",
       "attributes": {
         "realm_client": "false",
-        "logout.confirmation.enabled": "false",
         "oidc.ciba.grant.enabled": "false",
         "backchannel.logout.session.required": "true",
         "standard.token.exchange.enabled": "false",
         "oauth2.jwt.authorization.grant.enabled": "false",
-        "frontchannel.logout.session.required": "true",
         "oauth2.device.authorization.grant.enabled": "false",
-        "display.on.consent.screen": "false",
-        "pkce.code.challenge.method": "S256",
         "backchannel.logout.revoke.offline.tokens": "false",
         "dpop.bound.access.tokens": "false"
       },
@@ -752,7 +747,6 @@
             "full.path": "false",
             "introspection.token.claim": "true",
             "userinfo.token.claim": "false",
-            "multivalued": "true",
             "id.token.claim": "false",
             "lightweight.claim": "false",
             "access.token.claim": "true",
@@ -780,8 +774,7 @@
         "roles",
         "profile",
         "basic",
-        "email",
-        "receiptflow-api-audienc"
+        "email"
       ],
       "optionalClientScopes": [
         "address",
@@ -824,66 +817,6 @@
         "profile",
         "basic",
         "email"
-      ],
-      "optionalClientScopes": [
-        "address",
-        "phone",
-        "organization",
-        "offline_access",
-        "microprofile-jwt"
-      ]
-    },
-    {
-      "id": "e2018d2f-ac3d-4106-bb3e-7bfb8a50c1fb",
-      "clientId": "receiptflow-api",
-      "name": "",
-      "description": "",
-      "rootUrl": "",
-      "adminUrl": "",
-      "baseUrl": "",
-      "surrogateAuthRequired": false,
-      "enabled": true,
-      "alwaysDisplayInConsole": false,
-      "clientAuthenticatorType": "client-secret",
-      "secret": "**********",
-      "redirectUris": [
-        "/*"
-      ],
-      "webOrigins": [
-        "/*"
-      ],
-      "notBefore": 0,
-      "bearerOnly": false,
-      "consentRequired": false,
-      "standardFlowEnabled": false,
-      "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
-      "serviceAccountsEnabled": false,
-      "publicClient": false,
-      "frontchannelLogout": true,
-      "protocol": "openid-connect",
-      "attributes": {
-        "realm_client": "false",
-        "oidc.ciba.grant.enabled": "false",
-        "client.secret.creation.time": "1784299515",
-        "backchannel.logout.session.required": "true",
-        "standard.token.exchange.enabled": "false",
-        "oauth2.jwt.authorization.grant.enabled": "false",
-        "oauth2.device.authorization.grant.enabled": "false",
-        "backchannel.logout.revoke.offline.tokens": "false",
-        "dpop.bound.access.tokens": "false"
-      },
-      "authenticationFlowBindingOverrides": {},
-      "fullScopeAllowed": true,
-      "nodeReRegistrationTimeout": -1,
-      "defaultClientScopes": [
-        "web-origins",
-        "acr",
-        "roles",
-        "profile",
-        "basic",
-        "email",
-        "receiptflow-api-audienc"
       ],
       "optionalClientScopes": [
         "address",
@@ -1547,50 +1480,6 @@
       ]
     },
     {
-      "id": "c17188f3-3545-4df5-a0e0-f641c66108f1",
-      "name": "receiptflow-api-audienc",
-      "description": "Adds the ReceiptFlow API audience to access tokens",
-      "protocol": "openid-connect",
-      "attributes": {
-        "include.in.token.scope": "false",
-        "display.on.consent.screen": "false",
-        "gui.order": "",
-        "consent.screen.text": "",
-        "include.in.openid.provider.metadata": "false"
-      },
-      "protocolMappers": [
-        {
-          "id": "11138a27-9ba0-4982-9635-06ba1a06c0bf",
-          "name": "receiptflow-api-audienc",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "postman",
-            "id.token.claim": "false",
-            "lightweight.claim": "true",
-            "introspection.token.claim": "true",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "false"
-          }
-        },
-        {
-          "id": "9138d19c-b683-4324-a89d-ea0e3d312e02",
-          "name": "Postman",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.client.audience": "postman",
-            "id.token.claim": "false",
-            "lightweight.claim": "false",
-            "access.token.claim": "true",
-            "introspection.token.claim": "true"
-          }
-        }
-      ]
-    },
-    {
       "id": "c0dffefe-5299-4c30-a9db-d05d287a2842",
       "name": "service_account",
       "description": "Specific scope for a client enabled for service accounts",
@@ -1819,8 +1708,7 @@
     "roles",
     "web-origins",
     "acr",
-    "basic",
-    "receiptflow-api-audienc"
+    "basic"
   ],
   "defaultOptionalClientScopes": [
     "offline_access",

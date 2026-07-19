@@ -46,7 +46,7 @@ var keycloak = builder.AddKeycloak("Keycloak", 6001)
 
 var nvidiaApiKey = builder.AddParameter("nvidia-api-key", secret: true);
 
-builder.AddProject<Projects.ReceiptFlow_Api>("receiptflow-api")
+var api = builder.AddProject<Projects.ReceiptFlow_Api>("receiptflow-api")
 	.WithEnvironment("NvidiaEmbeddings__ApiKey", nvidiaApiKey)
 	.WithEnvironment("NvidiaChat__ApiKey", nvidiaApiKey)
 	.WithReference(receiptFlowDatabase)
@@ -60,6 +60,28 @@ builder.AddProject<Projects.ReceiptFlow_Api>("receiptflow-api")
 	.WaitFor(blobs)
 	.WaitFor(messaging)
 	.WaitFor(keycloak);
+
+//builder.AddViteApp("receiptflow-web", "../ReceiptFlow.Web")
+//	//.WithHttpEndpoint(port: 3000, targetPort: 3000, name: "http")
+//	.WithExternalHttpEndpoints()
+//	.WithReference(api)
+//	.WithReference(keycloak)
+//	.WithEnvironment("VITE_API_BASE_URL", api.GetEndpoint("https"))
+//	.WithEnvironment("VITE_KEYCLOAK_URL", keycloak.GetEndpoint("http"))
+//	.WithEnvironment("VITE_KEYCLOAK_REALM", "receipt")
+//	.WithEnvironment("VITE_KEYCLOAK_CLIENT_ID", "receiptflow-web");
+
+builder.AddViteApp("receiptflow-web", "../ReceiptFlow.Web")
+	.WithExternalHttpEndpoints()
+	.WithReference(api)
+	.WithReference(keycloak)
+	.WaitFor(api)
+	.WaitFor(keycloak)
+	.WithEnvironment("VITE_API_BASE_URL", api.GetEndpoint("https"))
+	.WithEnvironment("VITE_KEYCLOAK_URL", keycloak.GetEndpoint("http"))
+	.WithEnvironment("VITE_KEYCLOAK_REALM",	"receipt")
+	.WithEnvironment("VITE_KEYCLOAK_CLIENT_ID",	"receiptflow-web");
+
 builder.AddProject<Projects.ReceiptFlow_DocumentWorker>(
 	"receiptflow-documentworker")
 	.WithEnvironment("Nvidia__ApiKey",	nvidiaApiKey)
