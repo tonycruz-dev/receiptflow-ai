@@ -61,17 +61,13 @@ var api = builder.AddProject<Projects.ReceiptFlow_Api>("receiptflow-api")
 	.WaitFor(messaging)
 	.WaitFor(keycloak);
 
-//builder.AddViteApp("receiptflow-web", "../ReceiptFlow.Web")
-//	//.WithHttpEndpoint(port: 3000, targetPort: 3000, name: "http")
-//	.WithExternalHttpEndpoints()
-//	.WithReference(api)
-//	.WithReference(keycloak)
-//	.WithEnvironment("VITE_API_BASE_URL", api.GetEndpoint("https"))
-//	.WithEnvironment("VITE_KEYCLOAK_URL", keycloak.GetEndpoint("http"))
-//	.WithEnvironment("VITE_KEYCLOAK_REALM", "receipt")
-//	.WithEnvironment("VITE_KEYCLOAK_CLIENT_ID", "receiptflow-web");
+
 
 builder.AddViteApp("receiptflow-web", "../ReceiptFlow.Web")
+	.WithEndpoint("http", endpoint =>
+	{
+		endpoint.Port = 3000;
+	})
 	.WithExternalHttpEndpoints()
 	.WithReference(api)
 	.WithReference(keycloak)
@@ -79,8 +75,8 @@ builder.AddViteApp("receiptflow-web", "../ReceiptFlow.Web")
 	.WaitFor(keycloak)
 	.WithEnvironment("VITE_API_BASE_URL", api.GetEndpoint("https"))
 	.WithEnvironment("VITE_KEYCLOAK_URL", keycloak.GetEndpoint("http"))
-	.WithEnvironment("VITE_KEYCLOAK_REALM",	"receipt")
-	.WithEnvironment("VITE_KEYCLOAK_CLIENT_ID",	"receiptflow-web");
+	.WithEnvironment("VITE_KEYCLOAK_REALM", "receipt")
+	.WithEnvironment("VITE_KEYCLOAK_CLIENT_ID", "receiptflow-web");
 
 builder.AddProject<Projects.ReceiptFlow_DocumentWorker>(
 	"receiptflow-documentworker")

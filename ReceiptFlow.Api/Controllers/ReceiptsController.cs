@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using ReceiptFlow.Application.Receipts.CreateReceipt;
 using ReceiptFlow.Application.Receipts.Documents;
 using ReceiptFlow.Application.Receipts.GetReceipt;
+using ReceiptFlow.Application.Receipts.ListReceipts;
 using ReceiptFlow.Application.Receipts.UploadDocument;
 
 namespace ReceiptFlow.Api.Controllers;
@@ -13,12 +14,37 @@ namespace ReceiptFlow.Api.Controllers;
 public sealed class ReceiptsController(
 	CreateReceiptHandler createReceiptHandler,
 	GetReceiptHandler getReceiptHandler,
+	ListReceiptsHandler listReceiptsHandler,
 	UploadReceiptDocumentHandler uploadReceiptDocumentHandler,
 	ListReceiptDocumentsHandler listReceiptDocumentsHandler,
 	GetReceiptDocumentHandler getReceiptDocumentHandler,
 	ReindexReceiptDocumentHandler reindexReceiptDocumentHandler)
 	: ControllerBase
 {
+	[HttpGet]
+	[ProducesResponseType<ReceiptListResponse>(StatusCodes.Status200OK)]
+	[ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+	public async Task<IActionResult> List(
+		[FromQuery] ReceiptListRequest request,
+		CancellationToken cancellationToken)
+	{
+		try
+		{
+			return Ok(await listReceiptsHandler.HandleAsync(
+				request,
+				cancellationToken));
+		}
+		catch (ReceiptListValidationException exception)
+		{
+			return BadRequest(new ProblemDetails
+			{
+				Title = "The receipt list request is invalid.",
+				Detail = exception.Message,
+				Status = StatusCodes.Status400BadRequest
+			});
+		}
+	}
+
 	[HttpPost]
 	public async Task<IActionResult> Create(
 		CreateReceiptRequest request,

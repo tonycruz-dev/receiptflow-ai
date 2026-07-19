@@ -5,9 +5,11 @@ using ReceiptFlow.Api.Authentication;
 using ReceiptFlow.Api.Options;
 using ReceiptFlow.Application.Abstractions.Authentication;
 using ReceiptFlow.Application.Assistant.Receipts;
+using ReceiptFlow.Application.Dashboard;
 using ReceiptFlow.Application.Receipts.CreateReceipt;
 using ReceiptFlow.Application.Receipts.Documents;
 using ReceiptFlow.Application.Receipts.GetReceipt;
+using ReceiptFlow.Application.Receipts.ListReceipts;
 using ReceiptFlow.Application.Receipts.UploadDocument;
 using ReceiptFlow.Application.Search.Receipts;
 using ReceiptFlow.Infrastructure;
@@ -78,6 +80,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 builder.Services.AddScoped<CreateReceiptHandler>();
 builder.Services.AddScoped<GetReceiptHandler>();
+builder.Services.AddScoped<ListReceiptsHandler>();
+builder.Services.AddScoped<GetDashboardHandler>();
 builder.Services.AddScoped<UploadReceiptDocumentHandler>();
 builder.Services.AddScoped<ListReceiptDocumentsHandler>();
 builder.Services.AddScoped<GetReceiptDocumentHandler>();
@@ -86,6 +90,31 @@ builder.Services.AddScoped<ReceiptSearchHandler>();
 builder.Services.AddScoped<AskReceiptQuestionHandler>();
 
 builder.Services.AddControllers();
+const string frontendCorsPolicy = "ReceiptFlowFrontend";
+var productionOrigins = builder.Configuration
+	.GetSection("Cors:AllowedOrigins")
+	.Get<string[]>() ?? [];
+
+builder.Services.AddCors(options =>
+{
+	options.AddPolicy(frontendCorsPolicy, policy =>
+	{
+		if (builder.Environment.IsDevelopment())
+		{
+			policy.SetIsOriginAllowed(origin =>
+				Uri.TryCreate(origin, UriKind.Absolute, out var uri) &&
+				(uri.Scheme == Uri.UriSchemeHttp ||
+				 uri.Scheme == Uri.UriSchemeHttps) &&
+				uri.IsLoopback);
+		}
+		else if (productionOrigins.Length > 0)
+		{
+			policy.WithOrigins(productionOrigins);
+		}
+
+		policy.AllowAnyHeader().AllowAnyMethod();
+	});
+});
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
@@ -101,6 +130,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseCors(frontendCorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -1,25 +1,37 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, type PropsWithChildren } from 'react';
-import { AuthProvider } from '@/providers/auth-provider';
+import { shouldRetryRequest } from '@/api/api-error';
+import type { AppEnvironment } from '@/config/env';
+import { AuthProvider, type KeycloakFactory } from '@/providers/auth-provider';
 import { ThemeProvider } from '@/providers/theme-provider';
 
-export function AppProviders({ children }: PropsWithChildren) {
+interface AppProvidersProps extends PropsWithChildren {
+  environment: AppEnvironment;
+  keycloakFactory?: KeycloakFactory | undefined;
+}
+
+export function AppProviders({
+  children,
+  environment,
+  keycloakFactory,
+}: AppProvidersProps) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
         defaultOptions: {
           queries: {
-            retry: 1,
-            staleTime: 30_000,
+            retry: shouldRetryRequest,
+            staleTime: 60_000,
             refetchOnWindowFocus: false,
           },
+          mutations: { retry: false },
         },
       }),
   );
 
   return (
     <ThemeProvider>
-      <AuthProvider>
+      <AuthProvider environment={environment} keycloakFactory={keycloakFactory}>
         <QueryClientProvider client={queryClient}>
           {children}
         </QueryClientProvider>

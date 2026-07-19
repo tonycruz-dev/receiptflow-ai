@@ -51,7 +51,7 @@ export function ReceiptCard({ receipt }: ReceiptCardProps) {
                 day: 'numeric',
                 month: 'short',
                 year: 'numeric',
-              }).format(new Date(`${receipt.date}T12:00:00`))}
+              }).format(new Date(receipt.date))}
             </time>
           </div>
           <StatusBadge status={receipt.status} />

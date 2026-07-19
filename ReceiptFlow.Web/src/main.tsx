@@ -4,7 +4,7 @@ import { App } from '@/app';
 import { validateEnvironment } from '@/config/env';
 import '@/styles.css';
 
-validateEnvironment(import.meta.env);
+const environment = validateEnvironment(import.meta.env);
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -13,6 +13,6 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    <App environment={environment} />
   </StrictMode>,
 );

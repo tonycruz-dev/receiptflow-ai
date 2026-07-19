@@ -764,7 +764,7 @@
             "lightweight.claim": "false",
             "access.token.claim": "true",
             "introspection.token.claim": "true",
-            "included.custom.audience": "receipt"
+            "included.custom.audience": "receiptflow-api"
           }
         }
       ],
@@ -895,13 +895,14 @@
       "description": "React web client for ReceiptFlow AI",
       "rootUrl": "http://localhost:3000",
       "adminUrl": "http://localhost:3000",
-      "baseUrl": "http://localhost:3000",
+      "baseUrl": "http://localhost:3000/",
       "surrogateAuthRequired": false,
       "enabled": true,
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "http://localhost:3000/auth/callback"
+        "http://localhost:3000/",
+        "http://localhost:3000/*"
       ],
       "webOrigins": [
         "http://localhost:3000"
@@ -920,7 +921,7 @@
         "logout.confirmation.enabled": "false",
         "standard.token.exchange.enabled": "false",
         "oauth2.jwt.authorization.grant.enabled": "false",
-        "post.logout.redirect.uris": "http://localhost:3000",
+        "post.logout.redirect.uris": "http://localhost:3000/",
         "frontchannel.logout.session.required": "true",
         "oauth2.device.authorization.grant.enabled": "false",
         "backchannel.logout.revoke.offline.tokens": "false",
@@ -940,7 +941,8 @@
         "roles",
         "profile",
         "basic",
-        "email"
+        "email",
+        "receiptflow-api-audience"
       ],
       "optionalClientScopes": [
         "address",
@@ -1696,6 +1698,36 @@
           "protocolMapper": "saml-organization-membership-mapper",
           "consentRequired": false,
           "config": {}
+        }
+      ]
+    },
+    {
+      "id": "c17188f3-3545-4df5-a0e0-f641c66108f1",
+      "name": "receiptflow-api-audience",
+      "description": "Adds the ReceiptFlow API audience to access tokens",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false",
+        "gui.order": "",
+        "consent.screen.text": "",
+        "include.in.openid.provider.metadata": "false"
+      },
+      "protocolMappers": [
+        {
+          "id": "11138a27-9ba0-4982-9635-06ba1a06c0bf",
+          "name": "receiptflow-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "receiptflow-api",
+            "id.token.claim": "false",
+            "lightweight.claim": "false",
+            "introspection.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false"
+          }
         }
       ]
     }

@@ -4,6 +4,8 @@ import { Wordmark } from '@/components/layout/wordmark';
 import { pageTitles } from '@/components/layout/navigation-items';
 import { ThemeToggle } from '@/components/shared/theme-toggle';
 import { Button } from '@/components/ui/button';
+import { useCurrentUser } from '@/api/use-current-user';
+import { useAuth } from '@/providers/use-auth';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +22,10 @@ function getPageTitle(pathname: string) {
 
 export function TopHeader() {
   const { pathname } = useLocation();
+  const { logout } = useAuth();
+  const currentUser = useCurrentUser();
+  const accountLabel =
+    currentUser.data?.username ?? currentUser.data?.email ?? 'Signed in';
 
   return (
     <header className="sticky top-0 z-30 flex h-18 items-center justify-between border-b bg-background/95 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
@@ -45,7 +51,9 @@ export function TopHeader() {
               <span className="flex size-7 items-center justify-center rounded-full bg-accent text-accent-foreground">
                 <UserRound aria-hidden="true" className="size-4" />
               </span>
-              <span className="hidden text-sm sm:inline">Account</span>
+              <span className="hidden max-w-40 truncate text-sm sm:inline">
+                {currentUser.isLoading ? 'Loading account…' : accountLabel}
+              </span>
               <ChevronDown
                 aria-hidden="true"
                 className="hidden size-3.5 sm:block"
@@ -53,10 +61,19 @@ export function TopHeader() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Account</DropdownMenuLabel>
+            <DropdownMenuLabel className="max-w-64 truncate">
+              {accountLabel}
+            </DropdownMenuLabel>
             <DropdownMenuSeparator className="my-1 h-px bg-border" />
             <DropdownMenuItem asChild>
               <Link to="/profile">View profile</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => {
+                void logout();
+              }}
+            >
+              Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

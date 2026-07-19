@@ -1,11 +1,13 @@
 import type { RouteObject } from 'react-router-dom';
 import { AppShell } from '@/components/layout/app-shell';
 import { ErrorState } from '@/components/shared/error-state';
+import { RouteLoading } from '@/components/shared/route-loading';
 
 export const routes: RouteObject[] = [
   {
     path: '/',
     element: <AppShell />,
+    HydrateFallback: RouteLoading,
     errorElement: (
       <div className="grid min-h-screen place-items-center p-6">
         <ErrorState

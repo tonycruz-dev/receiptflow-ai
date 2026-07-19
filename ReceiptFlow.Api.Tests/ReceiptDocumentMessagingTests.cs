@@ -7,6 +7,8 @@ using ReceiptFlow.Application.Abstractions.Extraction;
 using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Persistence;
 using ReceiptFlow.Application.Abstractions.Storage;
+using ReceiptFlow.Application.Dashboard;
+using ReceiptFlow.Application.Receipts.ListReceipts;
 using ReceiptFlow.Application.Receipts.UploadDocument;
 using ReceiptFlow.Contracts;
 using ReceiptFlow.Domain.Entities;
@@ -209,6 +211,19 @@ public sealed class ReceiptDocumentMessagingTests
 			CancellationToken cancellationToken = default) =>
 			Task.FromResult<IReadOnlyList<Receipt>>(
 				receipt is null ? [] : [receipt]);
+
+		public Task<DashboardResponse> GetDashboardAsync(
+			string ownerUserId,
+			int recentReceiptLimit,
+			CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
+
+		public Task<ReceiptListResponse> GetPageAsync(
+			string ownerUserId,
+			int page,
+			int pageSize,
+			CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
 	}
 
 	private sealed class SucceedingUnitOfWork : IUnitOfWork

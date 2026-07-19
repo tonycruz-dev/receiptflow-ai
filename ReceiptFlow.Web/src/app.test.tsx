@@ -4,14 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderApp } from '@/test/render-app';
 
 describe('application shell', () => {
-  it('renders the representative dashboard without live calls', async () => {
+  it('renders the dashboard with mocked API data and no live calls', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     renderApp();
 
     expect(
       await screen.findByRole('heading', { name: 'Good morning' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Total receipts')).toBeInTheDocument();
+    expect(await screen.findByText('Total receipts')).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

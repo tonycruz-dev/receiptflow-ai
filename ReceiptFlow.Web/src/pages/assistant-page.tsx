@@ -1,31 +1,51 @@
+import { useMutation } from '@tanstack/react-query';
 import { ArrowUp, Bot, Sparkles } from 'lucide-react';
-import { useState, type SyntheticEvent } from 'react';
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
+import type { AskReceiptQuestionRequest } from '@/api/contracts';
+import { getSafeErrorMessage } from '@/api/error-message';
 import { AnswerCard } from '@/components/shared/answer-card';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ErrorState } from '@/components/shared/error-state';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
 import { PageHeader } from '@/components/shared/page-header';
 import { SourceCitationCard } from '@/components/shared/source-citation-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { formatCurrency } from '@/lib/utils';
+import { useAuth } from '@/providers/use-auth';
 
-interface AssistantAnswer {
-  text: string;
-  sources: Array<{
-    receiptId: string;
-    title: string;
-    excerpt: string;
-    reference: string;
-  }>;
+interface AskVariables extends AskReceiptQuestionRequest {
+  signal: AbortSignal;
 }
 
 export function Component() {
+  const { apiClient } = useAuth();
   const [question, setQuestion] = useState('');
-  const [isLoading] = useState(false);
-  const [answer] = useState<AssistantAnswer | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+  const assistant = useMutation({
+    mutationFn: ({ question: submittedQuestion, signal }: AskVariables) =>
+      apiClient.askReceiptQuestion({ question: submittedQuestion }, signal),
+  });
+
+  useEffect(
+    () => () => {
+      controllerRef.current?.abort();
+    },
+    [],
+  );
 
   function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
-    // Intentionally no request until the assistant API hook is introduced.
+    const submittedQuestion = question.trim();
+    if (!submittedQuestion) return;
+
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    assistant.mutate({
+      question: submittedQuestion,
+      signal: controller.signal,
+    });
   }
 
   return (
@@ -35,25 +55,55 @@ export function Component() {
         description="Ask questions grounded in your uploaded receipts and their source documents."
       />
 
-      {isLoading ? (
+      {assistant.isPending ? (
         <Card aria-label="Assistant is preparing an answer">
           <CardContent className="p-6">
+            <div className="mb-4 flex items-center gap-2 text-sm font-medium">
+              <Bot aria-hidden="true" className="size-4 text-primary" />
+              Reviewing your receipt evidence…
+            </div>
             <LoadingSkeleton lines={4} />
           </CardContent>
         </Card>
-      ) : answer ? (
+      ) : assistant.isError ? (
+        <ErrorState
+          title="Assistant unavailable"
+          description={getSafeErrorMessage(
+            assistant.error,
+            'The receipt assistant is temporarily unavailable. Please try again.',
+          )}
+          onAction={() => {
+            assistant.reset();
+          }}
+        />
+      ) : assistant.data ? (
         <AnswerCard
-          sources={answer.sources.map((source) => (
-            <SourceCitationCard key={source.receiptId} {...source} />
-          ))}
+          sources={
+            assistant.data.sources.length > 0 ? (
+              assistant.data.sources.map((source) => (
+                <SourceCitationCard
+                  key={`${source.documentId}-${source.citation.toString()}`}
+                  title={
+                    source.merchantName ??
+                    `Receipt source ${source.citation.toString()}`
+                  }
+                  reference={formatSourceReference(source)}
+                />
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No supporting receipt evidence was found.
+              </p>
+            )
+          }
         >
-          <p>{answer.text}</p>
+          <p className="whitespace-pre-wrap">{assistant.data.answer}</p>
         </AnswerCard>
       ) : (
         <EmptyState
           icon={Sparkles}
           title="What would you like to know?"
-          description="Ask about merchants, totals, dates or patterns. Answers and supporting receipt citations will appear here after the assistant service is connected."
+          description="Ask about merchants, totals, dates or patterns. Answers are grounded in your receipts and include trusted source citations when evidence is available."
         />
       )}
 
@@ -70,16 +120,21 @@ export function Component() {
           onChange={(event) => {
             setQuestion(event.target.value);
           }}
+          maxLength={1000}
           rows={3}
-          placeholder="For example: How much did I spend on travel last month?"
+          placeholder="For example: What electronics did I purchase and how much did I spend?"
           className="w-full resize-none rounded-lg border-0 bg-transparent p-2 text-sm placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
         />
         <div className="flex items-center justify-between gap-3 border-t px-1 pt-3">
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Bot aria-hidden="true" className="size-3.5" />
-            API connection coming next
+            Answers use your indexed receipt evidence
           </p>
-          <Button type="submit" size="sm" disabled>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!question.trim() || assistant.isPending}
+          >
             Ask
             <ArrowUp aria-hidden="true" />
           </Button>
@@ -87,4 +142,24 @@ export function Component() {
       </form>
     </div>
   );
+}
+
+function formatSourceReference(source: {
+  citation: number;
+  transactionDate: string | null;
+  total: number | null;
+  currency: string | null;
+}) {
+  const details = [`Source [${source.citation.toString()}]`];
+  if (source.transactionDate) {
+    details.push(
+      new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' }).format(
+        new Date(source.transactionDate),
+      ),
+    );
+  }
+  if (source.total !== null && source.currency) {
+    details.push(formatCurrency(source.total, source.currency));
+  }
+  return details.join(' · ');
 }
