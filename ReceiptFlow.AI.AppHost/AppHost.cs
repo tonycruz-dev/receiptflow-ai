@@ -1,4 +1,8 @@
+
+
 var builder = DistributedApplication.CreateBuilder(args);
+
+builder.AddDockerComposeEnvironment("receiptflow-ai");
 
 var postgres = builder
 	.AddPostgres("postgres", port: 5432)

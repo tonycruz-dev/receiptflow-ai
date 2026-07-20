@@ -1,4 +1,14 @@
-import { Bot, FileClock, Plus, ReceiptText, WalletCards } from 'lucide-react';
+import {
+  ArrowRight,
+  Bot,
+  FileClock,
+  //Plus,
+  ReceiptText,
+  Search,
+  Sparkles,
+  UploadCloud,
+  WalletCards,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { DashboardResponse } from '@/api/contracts';
 import { getSafeErrorMessage } from '@/api/error-message';
@@ -7,7 +17,7 @@ import { useDashboard } from '@/api/use-dashboard';
 import { EmptyState } from '@/components/shared/empty-state';
 import { ErrorState } from '@/components/shared/error-state';
 import { LoadingSkeleton } from '@/components/shared/loading-skeleton';
-import { PageHeader } from '@/components/shared/page-header';
+//import { PageHeader } from '@/components/shared/page-header';
 import { ReceiptCard } from '@/components/shared/receipt-card';
 import { SummaryCard } from '@/components/shared/summary-card';
 import { Button } from '@/components/ui/button';
@@ -38,20 +48,79 @@ export function Component() {
 }
 
 function DashboardHeader() {
+  const greeting = getGreeting();
+  const formattedDate = new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(new Date());
+
   return (
-    <PageHeader
-      title="Good morning"
-      description="A clear view of your receipts, spending and documents in progress."
-      actions={
-        <Button asChild>
-          <Link to="/receipts/new">
-            <Plus aria-hidden="true" />
-            Upload receipt
-          </Link>
-        </Button>
-      }
-    />
+    <section className="relative isolate overflow-hidden rounded-3xl border border-primary/15 bg-gradient-to-br from-primary/[0.12] via-card to-accent/40 px-6 py-8 shadow-sm sm:px-8 sm:py-10">
+      {/* Decorative background */}
+      <div
+        aria-hidden="true"
+        className="absolute -right-24 -top-24 size-72 rounded-full bg-primary/10 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="absolute -bottom-28 left-1/3 size-64 rounded-full bg-emerald-300/10 blur-3xl"
+      />
+
+      <div className="relative flex flex-col justify-between gap-8 lg:flex-row lg:items-center">
+        <div className="max-w-2xl">
+          <div className="mb-4 flex w-fit items-center gap-2 rounded-full border border-primary/15 bg-background/70 px-3 py-1.5 text-xs font-medium text-primary shadow-sm backdrop-blur">
+            <Sparkles className="size-3.5" aria-hidden="true" />
+            {formattedDate}
+          </div>
+
+          <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+            {greeting}
+          </h1>
+
+          <p className="mt-3 max-w-xl text-base leading-7 text-muted-foreground">
+            Track your spending, manage receipt documents and ask questions
+            grounded in your own purchase history.
+          </p>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button asChild size="lg" className="shadow-sm">
+              <Link to="/receipts/new">
+                <UploadCloud aria-hidden="true" />
+                Upload receipt
+              </Link>
+            </Button>
+
+            <Button asChild size="lg" variant="outline" className="bg-card/70">
+              <Link to="/search">
+                <Search aria-hidden="true" />
+                Search receipts
+              </Link>
+            </Button>
+          </div>
+        </div>
+
+        <div className="hidden shrink-0 lg:block">
+          <div className="relative grid size-40 place-items-center rounded-[2rem] border border-primary/15 bg-background/60 shadow-lg backdrop-blur">
+            <div className="absolute inset-4 rounded-3xl border border-dashed border-primary/20" />
+            <ReceiptText
+              className="relative size-16 text-primary"
+              strokeWidth={1.4}
+              aria-hidden="true"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
   );
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
 }
 
 function DashboardContent({ dashboard }: { dashboard: DashboardResponse }) {
@@ -68,69 +137,103 @@ function DashboardSummary({ dashboard }: { dashboard: DashboardResponse }) {
   const spending = dashboard.spendingByCurrency;
 
   return (
-    <section
-      aria-label="Receipt overview"
-      className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
-    >
-      <SummaryCard
-        label="Total receipts"
-        value={dashboard.totalReceipts.toLocaleString('en-GB')}
-        detail="Your saved receipts"
-        icon={ReceiptText}
-      />
-      {spending.length === 0 ? (
+    <section aria-labelledby="dashboard-overview-title">
+      <div className="mb-4">
+        <h2
+          id="dashboard-overview-title"
+          className="text-xl font-semibold tracking-tight"
+        >
+          Your overview
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          A summary of your receipt activity and recorded spending.
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
-          label="Total spending"
-          value="—"
-          detail="No recorded spending"
-          icon={WalletCards}
-          tone="success"
+          label="Total receipts"
+          value={dashboard.totalReceipts.toLocaleString('en-GB')}
+          detail="Saved to your library"
+          icon={ReceiptText}
         />
-      ) : (
-        spending.map((total) => (
+
+        {spending.length === 0 ? (
           <SummaryCard
-            key={total.currency}
-            label={
-              spending.length === 1
-                ? 'Total spending'
-                : `Total spending · ${total.currency}`
-            }
-            value={formatCurrency(total.amount, total.currency)}
-            detail="Across your receipts"
+            label="Total spending"
+            value="—"
+            detail="No confirmed spending yet"
             icon={WalletCards}
             tone="success"
           />
-        ))
-      )}
-      <SummaryCard
-        label="Documents processing"
-        value={dashboard.documentsProcessing.toLocaleString('en-GB')}
-        detail="Pending, queued or processing"
-        icon={FileClock}
-        tone="processing"
-      />
+        ) : (
+          spending.map((total) => (
+            <SummaryCard
+              key={total.currency}
+              label={
+                spending.length === 1
+                  ? 'Total spending'
+                  : `Spending · ${total.currency}`
+              }
+              value={formatCurrency(total.amount, total.currency)}
+              detail="Across confirmed receipts"
+              icon={WalletCards}
+              tone="success"
+            />
+          ))
+        )}
+
+        <SummaryCard
+          label="In progress"
+          value={dashboard.documentsProcessing.toLocaleString('en-GB')}
+          detail="Pending, queued or processing"
+          icon={FileClock}
+          tone="processing"
+        />
+      </div>
     </section>
   );
 }
-
 function AssistantCallout() {
   return (
-    <Card className="overflow-hidden border-primary/20 bg-accent/45">
-      <CardContent className="flex flex-col items-start justify-between gap-5 p-6 sm:flex-row sm:items-center">
+    <Card className="group relative overflow-hidden border-primary/20 bg-primary text-primary-foreground shadow-lg shadow-primary/10">
+      <div
+        aria-hidden="true"
+        className="absolute -right-16 -top-20 size-64 rounded-full bg-white/10 blur-2xl transition-transform duration-500 group-hover:scale-110"
+      />
+
+      <CardContent className="relative flex flex-col items-start justify-between gap-6 p-6 sm:flex-row sm:items-center sm:p-8">
         <div className="flex items-start gap-4">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Bot aria-hidden="true" />
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
+            <Bot className="size-6" aria-hidden="true" />
           </div>
+
           <div>
-            <h2 className="font-semibold">Ask your receipts</h2>
-            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-              Find spending details and supporting documents through a grounded
-              receipt assistant.
+            <div className="mb-1 flex items-center gap-2">
+              <h2 className="text-lg font-semibold">Ask ReceiptFlow AI</h2>
+              <Sparkles
+                className="size-4 text-emerald-200"
+                aria-hidden="true"
+              />
+            </div>
+
+            <p className="max-w-xl text-sm leading-6 text-primary-foreground/75">
+              Ask about purchases, merchants, totals or dates and receive
+              answers supported by evidence from your indexed receipts.
             </p>
           </div>
         </div>
-        <Button asChild variant="outline" className="bg-card">
-          <Link to="/assistant">Open assistant</Link>
+
+        <Button
+          asChild
+          variant="secondary"
+          size="lg"
+          className="shrink-0 shadow-sm"
+        >
+          <Link to="/assistant">
+            Open assistant
+            <ArrowRight aria-hidden="true" />
+          </Link>
         </Button>
       </CardContent>
     </Card>

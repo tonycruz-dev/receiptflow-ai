@@ -1,4 +1,4 @@
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReceiptDocumentDetail, ReceiptResponse } from '@/api/contracts';
@@ -116,6 +116,23 @@ describe('Receipt processing and review page', () => {
     expect(getReceiptDocument).toHaveBeenCalledTimes(2);
   });
 
+  it('presents completed extraction as review required', async () => {
+    renderDetails({
+      getReceiptDocument: vi.fn().mockResolvedValue(completedDocument),
+    });
+
+    const notice = (
+      await screen.findByText('Review required', { selector: 'p' })
+    ).closest('[role="status"]');
+    expect(notice).not.toBeNull();
+    expect(notice).toHaveTextContent(
+      'Review the suggested values before this receipt affects spending totals or search.',
+    );
+    expect(
+      screen.getByRole('heading', { name: 'Review extracted details' }),
+    ).toBeVisible();
+  });
+
   it('persists user corrections and confirms explicitly', async () => {
     const user = userEvent.setup();
     const confirmReceipt = vi.fn().mockResolvedValue(confirmedReceipt);
@@ -149,13 +166,19 @@ describe('Receipt processing and review page', () => {
       ...pendingDocument,
       processingStatus: 'Failed',
       receiptLifecycleStatus: 'Failed',
-      processingError: 'Document processing failed.',
+      processingError: 'ProviderException: secret technical detail',
     };
     renderDetails({
       getReceiptDocument: vi.fn().mockResolvedValue(failedDocument),
     });
 
     expect(await screen.findByText('Extraction failed')).toBeVisible();
+    expect(
+      screen.queryByText(/ProviderException: secret technical detail/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Upload a replacement' }),
+    ).toBeVisible();
     expect(screen.queryByLabelText(/Merchant name/)).not.toBeInTheDocument();
     await user.click(
       screen.getByRole('button', { name: 'Enter details manually' }),
@@ -164,6 +187,116 @@ describe('Receipt processing and review page', () => {
       screen.getByRole('heading', { name: 'Enter receipt details' }),
     ).toBeVisible();
     expect(screen.getByLabelText(/Merchant name/)).toHaveValue('');
+  });
+
+  it('uploads a validated replacement document and selects it', async () => {
+    const user = userEvent.setup();
+    const failedDocument: ReceiptDocumentDetail = {
+      ...pendingDocument,
+      processingStatus: 'Failed',
+      receiptLifecycleStatus: 'Failed',
+      processingError: 'Extraction provider failed.',
+    };
+    const replacementDocument: ReceiptDocumentDetail = {
+      ...pendingDocument,
+      documentId: 'document-2',
+      originalFileName: 'clearer-receipt.pdf',
+    };
+    const uploadReceiptDocument = vi.fn().mockResolvedValue({
+      documentId: 'document-2',
+      receiptId: 'receipt-1',
+      originalFileName: 'clearer-receipt.pdf',
+      contentType: 'application/pdf',
+      fileSize: 120,
+      processingStatus: 'Pending',
+    });
+    const getReceiptDocument = vi
+      .fn()
+      .mockImplementation((_receiptId: string, documentId: string) =>
+        Promise.resolve(
+          documentId === 'document-2' ? replacementDocument : failedDocument,
+        ),
+      );
+    renderDetails({ getReceiptDocument, uploadReceiptDocument });
+
+    const fileInput = await screen.findByLabelText('Receipt file');
+    const file = new File(['receipt'], 'clearer-receipt.pdf', {
+      type: 'application/pdf',
+    });
+    await user.upload(fileInput, file);
+    await user.click(
+      screen.getByRole('button', { name: 'Upload replacement' }),
+    );
+
+    await waitFor(() => {
+      expect(uploadReceiptDocument).toHaveBeenCalledWith('receipt-1', file);
+      expect(getReceiptDocument).toHaveBeenCalledWith(
+        'receipt-1',
+        'document-2',
+        expect.any(AbortSignal),
+      );
+    });
+    expect(
+      await screen.findByText('Source: clearer-receipt.pdf'),
+    ).toBeVisible();
+  });
+
+  it('shows confirmed totals, purchase information and numbered line items', async () => {
+    const confirmedDocument: ReceiptDocumentDetail = {
+      ...completedDocument,
+      receiptLifecycleStatus: 'Confirmed',
+      confirmationRequired: false,
+    };
+    renderDetails({
+      getReceipt: vi.fn().mockResolvedValue(confirmedReceipt),
+      getReceiptDocument: vi.fn().mockResolvedValue(confirmedDocument),
+    });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Confirmed receipt' }),
+    ).toBeVisible();
+    const purchaseInformation = screen
+      .getByRole('heading', { name: 'Purchase information' })
+      .closest('section');
+    if (!purchaseInformation) throw new Error('Purchase section not found.');
+    expect(
+      within(purchaseInformation).getByText('Corrected Shop'),
+    ).toBeVisible();
+    expect(within(purchaseInformation).getByText('18 July 2026')).toBeVisible();
+    expect(within(purchaseInformation).getByText('GBP')).toBeVisible();
+    expect(within(purchaseInformation).getByText('Food')).toBeVisible();
+    expect(within(purchaseInformation).getByText('receipt.pdf')).toBeVisible();
+
+    const totals = screen.getByText('Subtotal').closest('dl');
+    if (!totals) throw new Error('Totals list not found.');
+    expect(within(totals).getByText('£10.00')).toBeVisible();
+    expect(within(totals).getByText('£2.00')).toBeVisible();
+    expect(within(totals).getByText('£12.00')).toBeVisible();
+
+    const lineItems = screen
+      .getByRole('heading', { name: 'Line items' })
+      .closest('section');
+    if (!lineItems) throw new Error('Line items section not found.');
+    expect(within(lineItems).getByText('1')).toBeVisible();
+    expect(within(lineItems).getByText('Corrected milk')).toBeVisible();
+    expect(within(lineItems).getByText('Quantity 2')).toBeVisible();
+    expect(within(lineItems).getByText('£3.00')).toBeVisible();
+  });
+
+  it('shows the redesigned empty-document state', async () => {
+    renderDetails({
+      listReceiptDocuments: vi.fn().mockResolvedValue([]),
+    });
+
+    expect(
+      await screen.findByRole('heading', { name: 'No document uploaded' }),
+    ).toBeVisible();
+    expect(screen.getByText('No source document')).toBeVisible();
+    expect(
+      screen.getByText(
+        'This receipt does not have a source document to display or process.',
+      ),
+    ).toBeVisible();
   });
 
   it('cleans up active polling when unmounted', async () => {
