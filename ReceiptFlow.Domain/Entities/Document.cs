@@ -98,6 +98,8 @@ public sealed class Document
 
 	public DocumentExtraction? Extraction { get; private set; }
 
+	public ProductManual? ProductManual { get; private set; }
+
 	public void MarkQueued()
 	{
 		EnsureStatus(DocumentProcessingStatus.Pending);
@@ -192,8 +194,26 @@ public sealed class Document
 			throw new InvalidOperationException(
 				"The document is already attached to another receipt.");
 		}
+		if (DocumentType == DocumentType.ProductManual || ProductManual is not null)
+		{
+			throw new InvalidOperationException(
+				"A product manual document cannot be attached to a receipt.");
+		}
 
 		ReceiptId = receiptId;
+	}
+
+	internal void AttachToProductManual(ProductManual productManual)
+	{
+		ArgumentNullException.ThrowIfNull(productManual);
+		if (DocumentType != DocumentType.ProductManual)
+			throw new InvalidOperationException("Only a ProductManual document can be attached to a product manual version.");
+		if (ReceiptId is not null)
+			throw new InvalidOperationException("A receipt document cannot be attached to a product manual version.");
+		if (ProductManual is not null && ProductManual.Id != productManual.Id)
+			throw new InvalidOperationException("The document is already attached to another product manual version.");
+
+		ProductManual = productManual;
 	}
 	private void EnsureStatus(DocumentProcessingStatus expected)
 	{

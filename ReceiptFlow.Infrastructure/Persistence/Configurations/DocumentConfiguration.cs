@@ -9,7 +9,12 @@ internal sealed class DocumentConfiguration
 {
 	public void Configure(EntityTypeBuilder<Document> builder)
 	{
-		builder.ToTable("documents");
+		builder.ToTable("documents", table =>
+		{
+			table.HasCheckConstraint(
+				"ck_documents_product_manual_not_receipt",
+				"NOT (receipt_id IS NOT NULL AND document_type = 'ProductManual')");
+		});
 
 		builder.HasKey(document => document.Id);
 
@@ -87,6 +92,13 @@ internal sealed class DocumentConfiguration
 		builder.HasIndex(document => document.StorageKey)
 			.IsUnique()
 			.HasDatabaseName("ux_documents_storage_key");
+
+		builder.HasAlternateKey(document => new
+		{
+			document.Id,
+			document.OwnerUserId
+		})
+			.HasName("ak_documents_id_owner_user_id");
 
 		builder.HasIndex(document => new
 		{

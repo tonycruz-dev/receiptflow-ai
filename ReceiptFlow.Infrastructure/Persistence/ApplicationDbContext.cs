@@ -19,6 +19,12 @@ public sealed class ApplicationDbContext(
 	public DbSet<ReceiptLineItem> ReceiptLineItems =>
 		Set<ReceiptLineItem>();
 
+	public DbSet<Product> Products => Set<Product>();
+
+	public DbSet<ProductManual> ProductManuals => Set<ProductManual>();
+
+	public DbSet<Purchase> Purchases => Set<Purchase>();
+
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
 		ArgumentNullException.ThrowIfNull(modelBuilder);

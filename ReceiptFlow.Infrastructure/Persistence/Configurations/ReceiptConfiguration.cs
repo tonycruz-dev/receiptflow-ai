@@ -68,6 +68,13 @@ internal sealed class ReceiptConfiguration
 		builder.HasIndex(receipt => receipt.OwnerUserId)
 			.HasDatabaseName("ix_receipts_owner_user_id");
 
+		builder.HasAlternateKey(receipt => new
+		{
+			receipt.Id,
+			receipt.OwnerUserId
+		})
+			.HasName("ak_receipts_id_owner_user_id");
+
 		builder.HasIndex(receipt => new
 		{
 			receipt.OwnerUserId,
