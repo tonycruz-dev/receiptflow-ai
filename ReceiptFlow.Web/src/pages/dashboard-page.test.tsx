@@ -68,8 +68,8 @@ describe('Dashboard page', () => {
       }),
     );
 
-    expect(await screen.findByText('Total spending · EUR')).toBeVisible();
-    expect(screen.getByText('Total spending · USD')).toBeVisible();
+    expect(await screen.findByText('Spending · EUR')).toBeVisible();
+    expect(screen.getByText('Spending · USD')).toBeVisible();
     expect(screen.getByText('€20.00')).toBeVisible();
     expect(screen.getByText('US$30.00')).toBeVisible();
   });
@@ -80,7 +80,7 @@ describe('Dashboard page', () => {
     expect(
       await screen.findByRole('heading', { name: 'No receipts yet' }),
     ).toBeVisible();
-    expect(screen.getByText('No recorded spending')).toBeVisible();
+    expect(screen.getByText('No confirmed spending yet')).toBeVisible();
   });
 
   it('renders a retryable API error state', async () => {

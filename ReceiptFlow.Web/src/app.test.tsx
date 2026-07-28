@@ -4,12 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderApp } from '@/test/render-app';
 
 describe('application shell', () => {
+  const greeting = /Good (morning|afternoon|evening)/;
+
   it('renders the dashboard with mocked API data and no live calls', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     renderApp();
 
     expect(
-      await screen.findByRole('heading', { name: 'Good morning' }),
+      await screen.findByRole('heading', { name: greeting }),
     ).toBeInTheDocument();
     expect(await screen.findByText('Total receipts')).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -18,7 +20,7 @@ describe('application shell', () => {
   it('navigates between routes', async () => {
     const user = userEvent.setup();
     const { router } = renderApp();
-    await screen.findByRole('heading', { name: 'Good morning' });
+    await screen.findByRole('heading', { name: greeting });
 
     const receiptsLink = screen
       .getAllByRole('link', { name: 'Receipts' })
@@ -35,7 +37,7 @@ describe('application shell', () => {
 
   it('provides labelled mobile navigation', async () => {
     renderApp();
-    await screen.findByRole('heading', { name: 'Good morning' });
+    await screen.findByRole('heading', { name: greeting });
 
     const navigation = screen.getByRole('navigation', {
       name: 'Mobile navigation',

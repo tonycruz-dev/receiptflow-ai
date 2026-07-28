@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
+import { cleanupRenderAppHarness } from '@/test/render-app';
 
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -18,7 +19,9 @@ Object.defineProperty(window, 'matchMedia', {
 
 afterEach(() => {
   cleanup();
+  cleanupRenderAppHarness();
   document.documentElement.classList.remove('dark');
   localStorage.clear();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });

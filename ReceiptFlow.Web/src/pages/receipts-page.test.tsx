@@ -50,7 +50,9 @@ describe('Receipts page', () => {
 
     renderApp('/receipts', createMockApiClient());
     expect(
-      await screen.findByRole('heading', { name: 'No receipts yet' }),
+      await screen.findByRole('heading', {
+        name: 'Your receipt library is empty',
+      }),
     ).toBeVisible();
   });
 

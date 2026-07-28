@@ -7,6 +7,9 @@ import { AuthContext } from '@/providers/auth-context';
 import { ThemeProvider } from '@/providers/theme-provider';
 import { routes } from '@/routes';
 
+const queryClients = new Set<QueryClient>();
+const routers = new Set<ReturnType<typeof createMemoryRouter>>();
+
 export function createMockApiClient(
   overrides: Partial<ReceiptFlowApiClient> = {},
 ): ReceiptFlowApiClient {
@@ -94,6 +97,8 @@ export function renderApp(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  queryClients.add(queryClient);
+  routers.add(router);
   const result = render(
     <ThemeProvider>
       <AuthContext.Provider
@@ -111,5 +116,25 @@ export function renderApp(
     </ThemeProvider>,
   );
 
-  return { apiClient, queryClient, router, ...result };
+  const unmount = () => {
+    result.unmount();
+    router.dispose();
+    routers.delete(router);
+    queryClient.clear();
+    queryClients.delete(queryClient);
+  };
+
+  return { apiClient, queryClient, router, ...result, unmount };
+}
+
+export function cleanupRenderAppHarness() {
+  for (const router of routers) {
+    router.dispose();
+  }
+  routers.clear();
+
+  for (const queryClient of queryClients) {
+    queryClient.clear();
+  }
+  queryClients.clear();
 }
