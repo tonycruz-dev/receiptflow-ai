@@ -1,140 +1,196 @@
-# Architecture and Workflows
+# Architecture
 
-ReceiptFlow.AI follows Clean Architecture boundaries: Domain contains business state and invariants; Application contains use cases and abstractions; Infrastructure implements persistence, storage, messaging, search and AI providers; API, Worker and MCP are host/presentation projects.
+ReceiptFlow.AI uses Clean Architecture boundaries with separate hosts for HTTP requests, background work and MCP. The Application layer owns use cases and provider-neutral interfaces; Infrastructure supplies EF Core, storage, messaging, Typesense and NVIDIA implementations.
 
-## Project Dependencies
+## Project responsibilities
+
+| Project                          | Responsibility                                                                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ReceiptFlow.Domain`             | Domain model and invariants for receipts, documents, products, manuals, sections and purchases.                                                         |
+| `ReceiptFlow.Contracts`          | Versioned integration events: `ReceiptDocumentUploaded`, `ReceiptDocumentExtractionCompletedV1`, `ProductManualUploadedV1`, `ProductManualConfirmedV1`. |
+| `ReceiptFlow.Application`        | Use-case handlers, request/response DTOs and abstractions.                                                                                              |
+| `ReceiptFlow.Infrastructure`     | EF Core DbContext/configurations/migrations, repositories, storage, MassTransit, Typesense and NVIDIA implementations.                                  |
+| `ReceiptFlow.Api`                | Authenticated ASP.NET Core API.                                                                                                                         |
+| `ReceiptFlow.DocumentWorker`     | MassTransit consumers for extraction and indexing.                                                                                                      |
+| `ReceiptFlow.Mcp`                | Authenticated read-only MCP server.                                                                                                                     |
+| `ReceiptFlow.AI.ServiceDefaults` | Aspire service defaults.                                                                                                                                |
+| `ReceiptFlow.AI.AppHost`         | Aspire orchestration for local services and containers.                                                                                                 |
+| `ReceiptFlow.Api.Tests`          | Backend automated tests.                                                                                                                                |
+| `ReceiptFlow.Web`                | React frontend.                                                                                                                                         |
+
+## Component diagram
 
 ```mermaid
-flowchart TD
-  Domain[ReceiptFlow.Domain]
-  Contracts[ReceiptFlow.Contracts]
-  Application[ReceiptFlow.Application]
-  Infrastructure[ReceiptFlow.Infrastructure]
-  Api[ReceiptFlow.Api]
-  Worker[ReceiptFlow.DocumentWorker]
-  Mcp[ReceiptFlow.Mcp]
-  Defaults[ReceiptFlow.AI.ServiceDefaults]
-  AppHost[ReceiptFlow.AI.AppHost]
-  Tests[ReceiptFlow.Api.Tests]
+flowchart TB
+  subgraph AppHost["ReceiptFlow.AI.AppHost"]
+    Web["ReceiptFlow.Web<br/>React/Vite"]
+    Api["ReceiptFlow.Api"]
+    Worker["ReceiptFlow.DocumentWorker"]
+    Mcp["ReceiptFlow.Mcp"]
+    Keycloak["Keycloak receipt realm"]
+    Postgres[("PostgreSQL")]
+    Azurite["Azurite / Blob storage"]
+    RabbitMQ["RabbitMQ"]
+    Typesense[("Typesense receipt_chunks_v1")]
+  end
 
+  subgraph Code["Solution code"]
+    Domain["Domain"]
+    Application["Application"]
+    Infrastructure["Infrastructure"]
+    Contracts["Contracts"]
+  end
+
+  Nvidia["NVIDIA APIs"]
+  McpClient["MCP Inspector / client"]
+
+  Web --> Keycloak
+  Web --> Api
+  McpClient --> Mcp
+  Api --> Keycloak
+  Mcp --> Keycloak
+  Api --> Application
+  Worker --> Application
+  Mcp --> Application
   Application --> Domain
   Application --> Contracts
   Infrastructure --> Application
-  Infrastructure --> Domain
-  Infrastructure --> Contracts
-  Api --> Application
   Api --> Infrastructure
-  Api --> Defaults
-  Worker --> Application
   Worker --> Infrastructure
-  Worker --> Contracts
-  Worker --> Defaults
-  Mcp --> Application
   Mcp --> Infrastructure
-  Mcp --> Defaults
-  AppHost --> Api
-  AppHost --> Worker
-  AppHost --> Mcp
-  Tests --> Api
-  Tests --> Application
-  Tests --> Domain
-  Tests --> Infrastructure
-  Tests --> Worker
-  Tests --> Mcp
+  Infrastructure --> Postgres
+  Infrastructure --> Azurite
+  Infrastructure --> RabbitMQ
+  Infrastructure --> Typesense
+  Infrastructure --> Nvidia
 ```
 
-`ReceiptFlow.AI.ServiceDefaults` supplies shared OpenTelemetry, health checks, service discovery and HTTP resilience. `ReceiptFlow.AI.AppHost` orchestrates local resources and injects service references and secret parameters into dependent projects.
-
-## Upload, Extraction and Confirmation
+## Receipt-processing sequence
 
 ```mermaid
 sequenceDiagram
-  participant React
-  participant API as ReceiptFlow.Api
-  participant Blob as Blob storage or Azurite
-  participant DB as PostgreSQL
-  participant Outbox as MassTransit EF outbox
-  participant Rabbit as RabbitMQ
-  participant Worker as DocumentWorker
-  participant Nvidia as NVIDIA extraction
+  participant Web
+  participant Api
+  participant Storage
+  participant Db as PostgreSQL / EF outbox
+  participant Bus as RabbitMQ
+  participant Worker
+  participant AI as NVIDIA
+  participant Search as Typesense
 
-  React->>API: POST /api/receipts/import (multipart)
-  API->>Blob: Save validated PDF/PNG/JPEG
-  API->>DB: Create Draft receipt and Pending document
-  API->>Outbox: Publish ReceiptDocumentUploaded
-  Outbox->>Rabbit: Deliver message
-  Rabbit->>Worker: ReceiptDocumentUploaded
-  Worker->>DB: Mark document Processing
-  Worker->>Blob: Open stored document
-  Worker->>Nvidia: Extract fields and OCR text
-  Worker->>DB: Save DocumentExtraction
-  Worker->>DB: Mark document Completed
-  Worker->>DB: Mark receipt ReviewRequired
-  React->>API: GET receipt/document status
-  React->>API: PUT /api/receipts/{id}/confirmation
-  API->>DB: Store user-confirmed receipt fields
-  API->>Outbox: Publish ReceiptDocumentExtractionCompletedV1
+  Web->>Api: POST /api/receipts/import
+  Api->>Storage: Store PDF/image
+  Api->>Db: Create Receipt + Document
+  Api->>Db: Queue ReceiptDocumentUploaded
+  Db->>Bus: Publish via outbox
+  Bus->>Worker: Consume ReceiptDocumentUploaded
+  Worker->>Storage: Read file
+  Worker->>AI: Extract receipt fields
+  Worker->>Db: Save DocumentExtraction and line-item suggestions
+  Web->>Api: Poll /api/receipts/{id}/documents/{documentId}
+  Web->>Api: PUT /api/receipts/{id}/confirmation
+  Api->>Db: Confirm receipt
+  Api->>Db: Queue ReceiptDocumentExtractionCompletedV1
+  Bus->>Worker: Consume indexing event
+  Worker->>AI: Generate embeddings
+  Worker->>Search: Upsert receipt chunks
 ```
 
-The API also supports uploading a document to an existing receipt with `POST /api/receipts/{receiptId}/documents`. The upload-first import endpoint is the main frontend workflow.
-
-## Indexing and RAG
+## Manual-processing sequence
 
 ```mermaid
 sequenceDiagram
-  participant DB as Confirmed receipt
-  participant Outbox as EF outbox
-  participant Rabbit as RabbitMQ
-  participant Worker as DocumentWorker
-  participant Prep as Chunk preparer
-  participant Embed as NVIDIA embeddings
-  participant Typesense
-  participant API as Search/assistant API
-  participant Chat as NVIDIA chat
-  participant React
+  participant Web
+  participant Api
+  participant Storage
+  participant Db as PostgreSQL / EF outbox
+  participant Bus as RabbitMQ
+  participant Worker
+  participant AI as NVIDIA
+  participant Search as Typesense
 
-  DB->>Outbox: ReceiptDocumentExtractionCompletedV1
-  Outbox->>Rabbit: Deliver message
-  Rabbit->>Worker: Consume indexing event
-  Worker->>DB: Load receipt, document, extraction and line items
-  Worker->>Prep: Build deterministic text chunks
-  Worker->>Embed: Generate passage embeddings
-  Worker->>Typesense: Upsert owner-scoped chunks
-  React->>API: Search or ask question
-  API->>Embed: Generate query embedding
-  API->>Typesense: Hybrid search with owner filter
-  API->>Chat: Generate grounded answer from retrieved evidence
-  API->>API: Validate/dedupe citations against trusted evidence
-  API->>React: Answer plus trusted source cards
+  Web->>Api: POST /api/products/{productId}/manuals
+  Api->>Storage: Store manual PDF
+  Api->>Db: Create Document + ProductManual
+  Api->>Db: Queue ProductManualUploadedV1
+  Db->>Bus: Publish via outbox
+  Bus->>Worker: Consume ProductManualUploadedV1
+  Worker->>Storage: Read file
+  Worker->>AI: Extract metadata and sections
+  Worker->>Db: Save ManualExtraction + ordered ManualSections
+  Worker->>Db: Mark ReviewRequired or Failed
+  Web->>Api: Poll product manuals
+  Web->>Api: PUT /api/products/{productId}/manuals/{manualId}/confirmation
+  Api->>Db: Activate manual and supersede previous active version
+  Api->>Db: Queue ProductManualConfirmedV1 after commit
+  Bus->>Worker: Consume confirmation event
+  Worker->>AI: Embed sections
+  Worker->>Search: Upsert section documents and delete obsolete section IDs
 ```
 
-Search indexes only completed documents attached to confirmed receipts with usable extraction or line-item content.
-
-## Authentication
+## RAG and MCP request flow
 
 ```mermaid
-sequenceDiagram
-  participant React
-  participant Keycloak
-  participant API as ReceiptFlow.Api
-  participant App as Application
-  participant DB as PostgreSQL
-  participant Typesense
-
-  React->>Keycloak: Authorization Code + PKCE S256
-  Keycloak-->>React: Access token
-  React->>API: Bearer token
-  API->>Keycloak: Validate issuer and signing keys
-  API->>API: Validate audience receiptflow-api
-  API->>App: ICurrentUser from sub claim
-  App->>DB: Owner-filtered query
-  App->>Typesense: owner_user_id filter
+flowchart LR
+  A["React assistant<br/>or MCP tool"] --> B["JWT validation<br/>Keycloak issuer/audience/sub"]
+  B --> C["Application request handler"]
+  C --> D["Embedding generator"]
+  D --> E["Typesense hybrid retrieval<br/>owner + document type filter"]
+  E --> F["Evidence records"]
+  F --> G["Answer generator"]
+  G --> H["Citation integrity check"]
+  H --> I{"Evidence answers question?"}
+  I -- yes --> J["Answer with citation cards"]
+  I -- no --> K["Grounded refusal"]
 ```
 
-Confirmed Keycloak clients in the realm export include `receiptflow-web`, `receiptflow-api`, `receiptflow-mobile` and `postman`. `ReceiptFlow.Mcp` expects audience `receiptflow-mcp`; the matching public MCP client is documented as manual setup because it is not present in the checked-in realm export.
+## Owner isolation
 
-## Domain Model
+- API and MCP derive ownership from authenticated token claims.
+- Client requests do not accept an owner ID.
+- EF queries and relationships include `owner_user_id` at owner-scoped boundaries.
+- Typesense documents include `owner_user_id`; searches and cleanup operations filter by owner.
 
-`Receipt` owns line items and can have documents. `Document` belongs to one owner and may be attached to a receipt. `DocumentExtraction` is one-to-one with a document. Receipt lifecycle states are `Draft`, `Processing`, `ReviewRequired`, `Confirmed` and `Failed`. Document processing states are `Pending`, `Queued`, `Processing`, `AwaitingReview`, `Completed` and `Failed`.
+## API surface
 
-Draft receipts intentionally allow nullable merchant/date/amount fields. The confirmed receipt is the canonical spending record; extraction data remains a suggestion/audit trail.
+| Area              | Endpoints                                                                                                                                                                                                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth              | `GET /api/auth/me`                                                                                                                                                                                                                                                                 |
+| Dashboard         | `GET /api/dashboard`                                                                                                                                                                                                                                                               |
+| Receipts          | `GET /api/receipts`, `POST /api/receipts`, `POST /api/receipts/import`, `GET /api/receipts/{id}`, `PUT /api/receipts/{receiptId}/confirmation`                                                                                                                                     |
+| Receipt documents | `POST /api/receipts/{receiptId}/documents`, `GET /api/receipts/{receiptId}/documents`, `GET /api/receipts/{receiptId}/documents/{documentId}`, `POST /api/receipts/{receiptId}/documents/{documentId}/reindex`                                                                     |
+| Products/manuals  | `POST /api/products`, `GET /api/products`, `GET /api/products/{productId}`, `POST /api/products/{productId}/manuals`, `GET /api/products/{productId}/manuals`, `GET /api/products/{productId}/manuals/{manualId}`, `PUT /api/products/{productId}/manuals/{manualId}/confirmation` |
+| Purchases         | `GET /api/receipts/{receiptId}/unlinked-items`, `GET /api/purchases`, `POST /api/purchases`, `DELETE /api/purchases/{purchaseId}`, `PUT /api/purchases/{purchaseId}/manual`                                                                                                        |
+| Search/assistant  | `POST /api/search/receipts`, `POST /api/assistant/receipts/ask`                                                                                                                                                                                                                    |
+
+## MCP tools
+
+| Tool                  | Purpose                                                |
+| --------------------- | ------------------------------------------------------ |
+| `search_receipts`     | Search authenticated user's receipt evidence.          |
+| `search_manuals`      | Search authenticated user's confirmed manual sections. |
+| `ask_receipts`        | Ask grounded questions over receipt evidence.          |
+| `ask_product_manuals` | Ask grounded questions over manual evidence.           |
+
+## Data model
+
+```mermaid
+erDiagram
+  OWNER ||--o{ RECEIPT : owns
+  OWNER ||--o{ DOCUMENT : owns
+  OWNER ||--o{ PRODUCT : owns
+  OWNER ||--o{ PRODUCT_MANUAL : owns
+  OWNER ||--o{ PURCHASE : owns
+  RECEIPT ||--o{ RECEIPT_LINE_ITEM : contains
+  RECEIPT ||--o{ DOCUMENT : has
+  DOCUMENT ||--o| DOCUMENT_EXTRACTION : has
+  PRODUCT ||--o{ PRODUCT_MANUAL : has
+  DOCUMENT ||--o| PRODUCT_MANUAL : backs
+  PRODUCT_MANUAL ||--o| MANUAL_EXTRACTION : has
+  PRODUCT_MANUAL ||--o{ MANUAL_SECTION : contains
+  PRODUCT_MANUAL ||--o{ PRODUCT_MANUAL : supersedes
+  PRODUCT ||--o{ PURCHASE : has
+  RECEIPT ||--o{ PURCHASE : source
+  RECEIPT_LINE_ITEM ||--o| PURCHASE : linked_from
+  PRODUCT_MANUAL ||--o{ PURCHASE : warranty_source
+```

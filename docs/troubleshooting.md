@@ -1,57 +1,80 @@
 # Troubleshooting
 
-## Keycloak `Invalid parameter: redirect_uri`
+## Keycloak redirect URI errors
 
-Expected frontend origin: `http://localhost:3000`. Expected redirect URI: `http://localhost:3000/`.
+The web frontend is configured for `http://localhost:3000`. Ensure the live Keycloak `receiptflow-web` client includes the exact redirect URI. If Keycloak reports that the `receipt` realm already exists, Aspire may skip realm import; inspect the live realm instead of assuming checked-in JSON was reapplied.
 
-Inspect the live `receipt` realm and `receiptflow-web` client. Do not rely only on `realm-export.json` if Keycloak reports `Realm 'receipt' already exists. Import skipped`. Ensure the live client has `http://localhost:3000/` and, for local development, optionally `http://localhost:3000/*`.
+## API returns 401 or 403
 
-## API Invalid Token Audience
+Check:
 
-`ReceiptFlow.Api` requires audience `receiptflow-api`. Make sure the web client receives the `receiptflow-api-audience` client scope/audience mapper and that the API is using the `receipt` realm authority.
+- token issuer matches `Keycloak:Authority`;
+- token audience matches `receiptflow-api` for API or `receiptflow-mcp` for MCP;
+- token contains a `sub` claim;
+- local development `RequireHttpsMetadata` matches the Keycloak endpoint mode.
 
-## React Login Loop
+## MCP Inspector cannot list tools
 
-The frontend AuthProvider uses Authorization Code + PKCE, `onLoad: "login-required"`, `checkLoginIframe: false` and a stable origin redirect URI. Repeated initialization can still happen if React Strict Mode creates a new Keycloak instance outside the provider lifecycle or if Keycloak rejects the redirect/audience and returns to the app with an unusable token.
+`ReceiptFlow.Mcp` serves Streamable HTTP at `/mcp`. Use the HTTPS MCP endpoint shown by Aspire and append `/mcp` if needed. The bearer token must have audience `receiptflow-mcp`. The tools are:
 
-## EF Column Does Not Exist
+- `search_receipts`
+- `search_manuals`
+- `ask_receipts`
+- `ask_product_manuals`
 
-Run pending migrations against the same PostgreSQL database used by AppHost:
+## Extraction does not complete
 
-```powershell
-dotnet ef database update --project ReceiptFlow.Infrastructure --startup-project ReceiptFlow.Api
-```
+Check:
 
-The API does not automatically apply migrations.
+- worker is running in Aspire;
+- RabbitMQ is healthy;
+- the document was accepted by upload validation;
+- NVIDIA endpoint/model/API key are configured;
+- file is within configured size/page limits;
+- worker logs for transient provider failures or timeout messages.
 
-## PostgreSQL Password Mismatch
+## Manual extraction fails
 
-Aspire uses a persisted PostgreSQL volume named in AppHost. If credentials were changed after the volume was created, the old database state may still be present. Prefer aligning secrets/configuration with the persisted volume; only remove a development volume when you intentionally want to lose local data.
+Manual-specific limits live under `ManualExtraction`:
 
-## Typesense API Key Parameter
+- `MaximumFileBytes`
+- `MaximumPages`
+- `MaximumExtractedCharacters`
+- `MaximumSections`
+- `MaximumSectionCharacters`
+- `MaximumRenderedImageBytes`
+- `ProcessingTimeoutSeconds`
 
-AppHost defines `Parameters:typesense-api-key` and injects it into API, worker and MCP as `Typesense__ApiKey`. Configure it with user secrets before starting AppHost.
+Large or encrypted PDFs may be rejected or fail processing.
 
-## Empty Search Results
+## Search returns no results
 
-Search only uses indexed, confirmed receipts. Confirm the receipt after extraction, ensure the indexing consumer has run, and verify Typesense has a compatible collection name/dimensions.
+Search only indexes confirmed receipts and confirmed manual sections. Confirm that:
 
-## NVIDIA Endpoint or Model Placeholder
+- the receipt/manual was confirmed;
+- indexing consumer ran;
+- Typesense is healthy;
+- collection name and embedding dimension match configuration;
+- the query uses the correct document-type filter.
 
-Appsettings contain placeholder values in non-development configuration. Set real NVIDIA endpoint/model values through appsettings.Development, user secrets or environment variables. Use HTTPS endpoints.
+The code validates schema compatibility and does not silently recreate incompatible collections.
 
-## NVIDIA Request Timeout
+## Assistant refuses to answer
 
-Extraction and chat HTTP clients use a 90-second attempt timeout and 3-minute total timeout with retries for transient failures. Large PDFs are capped by `Nvidia:MaxPdfPages`.
+This is expected when retrieved evidence cannot answer the question. The assistant is designed to cite only trusted retrieved evidence and refuse unsupported questions.
 
-## MassTransit License
+## Warranty dates look unexpected
 
-No MassTransit license configuration is present in the source. If your local runtime emits license warnings or your usage requires a license, configure it outside tracked files following MassTransit documentation.
+Warranty expiry is calculated without AI. The purchase stores a snapshot:
 
-## Aspire Keycloak Endpoint Name
+`confirmed receipt purchase date + selected manual warranty duration in months`
 
-The AppHost references `keycloak.GetEndpoint("http")`. Keep the Keycloak resource endpoint name as `http` when adjusting Aspire configuration.
+Month-end and leap-year behavior uses deterministic date arithmetic. Changing the selected manual version later does not silently rewrite the original warranty snapshot.
 
-## Vite Public Port Versus Internal Target
+## Aspire persisted volumes
 
-AppHost modifies the existing Vite `http` endpoint public port to `3000`. Vite may still have an internal target port behind Aspire. Use `http://localhost:3000` for browser access and Keycloak redirect settings.
+AppHost uses named persisted volumes for PostgreSQL, Azurite, RabbitMQ, Typesense and Keycloak. Do not delete them unless you intentionally want to remove local data.
+
+## Safe reset guidance
+
+For a clean demo, prefer a disposable machine, branch, or new environment. If you need to reset local infrastructure, first identify the named volume, confirm it belongs only to disposable development data, and back up anything you need.
