@@ -1,10 +1,32 @@
 # ReceiptFlow.AI
 
+![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)
+![React 19](https://img.shields.io/badge/React-19-61DAFB)
+![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6)
+![Aspire](https://img.shields.io/badge/.NET%20Aspire-13-512BD4)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+
 ReceiptFlow.AI is a portfolio/demo receipt and product-manual intelligence platform. It combines authenticated document upload, asynchronous AI extraction, human review, hybrid search, grounded RAG answers with citations, read-only MCP tools, product-manual versioning, purchase linking and deterministic warranty tracking.
 
 The project demonstrates a realistic full-stack architecture: .NET Clean Architecture, React 19, Keycloak owner isolation, EF Core/PostgreSQL persistence, MassTransit/RabbitMQ background workflows, Typesense hybrid retrieval, NVIDIA-backed extraction/embedding/chat implementations and .NET Aspire local orchestration.
 
-> Portfolio note: this repository demonstrates architecture and engineering approach. It is not a production SaaS template as-is; secrets, live provider accounts, deployment hardening, monitoring and data-retention policy are environment-specific.
+> Project status: ReceiptFlow.AI is a polished portfolio/demo application. It demonstrates production-shaped architecture, but it is not presented as a hosted production service or turnkey SaaS product.
+
+## Table of contents
+
+- [Key capabilities](#key-capabilities)
+- [Screenshots](#screenshots)
+- [Architecture](#architecture)
+- [Processing flows](#processing-flows)
+- [Data model](#data-model)
+- [Technology stack](#technology-stack)
+- [Setup](#setup)
+- [Configuration](#configuration)
+- [Testing status](#testing-status)
+- [Demo walkthrough](#demo-walkthrough)
+- [Deployment](#deployment)
+- [Documentation](#documentation)
+- [Known documentation gaps](#known-documentation-gaps)
 
 ## Key capabilities
 
@@ -17,6 +39,21 @@ The project demonstrates a realistic full-stack architecture: .NET Clean Archite
 - Receipt-line-item to product purchase linking with deterministic warranty expiry from receipt purchase date plus snapshotted manual warranty duration.
 - React 19/Vite/Tailwind frontend with upload, review, search, assistant, products, manuals, purchases and warranty views.
 - Aspire AppHost for local PostgreSQL, Azurite, RabbitMQ, Typesense, Keycloak, API, worker, MCP and Vite orchestration.
+
+## Screenshots
+
+The screenshots below are checked-in repository assets. They are intended as demo placeholders until a final public demo run captures a consistent image set.
+
+| Area                                 | Preview                                                                                                                        |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Aspire dashboard                     | ![Aspire dashboard showing ReceiptFlow local services](docs/images/Aspire%20dashboard.png)                                     |
+| Receipt dashboard                    | ![Receipt dashboard with owner-scoped receipt summaries](docs/images/Receipt%20dashboard.png)                                  |
+| Receipt upload and extraction review | ![Receipt upload and extraction review workflow](docs/images/Receipt%20upload%20and%20extraction%20review.png)                 |
+| Product manual workflow              | ![Product manual upload, extraction and version workflow](docs/images/Product%20manual%20workflow.png)                         |
+| Hybrid search                        | ![Hybrid search over receipts and manuals](docs/images/Hybrid%20search.png)                                                    |
+| Grounded assistant with citations    | ![Grounded assistant answer with citation cards](docs/images/Grounded%20assistant%20with%20citations.png)                      |
+| Purchases and warranties             | ![Purchases and warranties view with deterministic warranty status](docs/images/purchases-screenshot.png)                      |
+| MCP Inspector                        | _Screenshot placeholder: capture MCP Inspector connected to the authenticated `/mcp` endpoint before public portfolio launch._ |
 
 ## Architecture
 
@@ -405,9 +442,13 @@ An Azure demo deployment should provision equivalent managed services or contain
 - [Troubleshooting](docs/troubleshooting.md)
 - [Manual support design notes](docs/manual-support-design.md)
 - [Manual upload readiness audit](docs/manual-upload-readiness.md)
+- [Release checklist](docs/release-checklist.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [License](LICENSE)
 
 ## Known documentation gaps
 
-- No curated screenshots are checked in.
-- No license file is present.
+- MCP Inspector screenshot still needs to be captured from a real authenticated demo session.
 - Azure infrastructure-as-code for the temporary portfolio deployment is not committed.
+- A short demo recording has not been produced yet.
