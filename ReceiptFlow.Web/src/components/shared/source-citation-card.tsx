@@ -8,6 +8,8 @@ interface SourceCitationCardProps {
   excerpt?: string;
   receiptId?: string;
   documentId?: string;
+  productId?: string;
+  productManualId?: string;
 }
 
 export function SourceCitationCard({
@@ -16,7 +18,14 @@ export function SourceCitationCard({
   reference,
   receiptId,
   documentId,
+  productId,
+  productManualId,
 }: SourceCitationCardProps) {
+  const manualUrl =
+    productId && productManualId
+      ? `/products/${productId}?manualId=${productManualId}`
+      : null;
+
   return (
     <Card>
       <CardContent className="flex gap-3 p-4">
@@ -38,6 +47,15 @@ export function SourceCitationCard({
               className="mt-3 inline-flex items-center gap-1.5 rounded-sm text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               View receipt
+              <ArrowRight aria-hidden="true" className="size-3.5" />
+            </Link>
+          ) : null}
+          {manualUrl ? (
+            <Link
+              to={manualUrl}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-sm text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              View manual
               <ArrowRight aria-hidden="true" className="size-3.5" />
             </Link>
           ) : null}

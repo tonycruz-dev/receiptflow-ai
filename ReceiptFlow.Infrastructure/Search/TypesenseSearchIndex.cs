@@ -53,11 +53,11 @@ internal sealed class TypesenseSearchIndex(
 				{
 					collection = options.CollectionName,
 					q = query.Query,
-					query_by = "content,merchant_name,category,currency",
-					query_by_weights = "5,3,2,1",
+					query_by = "content,merchant_name,category,currency,product_manufacturer,product_name,model_number,manual_version,section_heading",
+					query_by_weights = "5,3,2,1,3,4,4,3,3",
 					vector_query = $"embedding:([{vector}], alpha: 0.5)",
-					filter_by = BuildOwnerFilter(query.OwnerUserId),
-					sort_by = "_text_match:desc",
+					filter_by = BuildSearchFilter(query.OwnerUserId, query.DocumentType),
+					sort_by = "is_active_manual:desc,_text_match:desc",
 					drop_tokens_threshold = 0,
 					rerank_hybrid_matches = true,
 					page = query.Page,
@@ -266,6 +266,38 @@ internal sealed class TypesenseSearchIndex(
 		}
 	}
 
+	public async Task DeleteObsoleteManualSectionsAsync(
+		Guid productManualId,
+		string ownerUserId,
+		IReadOnlySet<string> currentSectionIds,
+		CancellationToken cancellationToken = default)
+	{
+		await EnsureCollectionAsync(cancellationToken);
+
+		var existingIds = await GetManualSectionIdsAsync(
+			productManualId,
+			ownerUserId,
+			cancellationToken);
+
+		foreach (var obsoleteId in existingIds.Except(currentSectionIds))
+		{
+			using var request = CreateRequest(
+				HttpMethod.Delete,
+				$"/collections/{options.CollectionName}/documents/{Uri.EscapeDataString(obsoleteId)}");
+			using var response = await SendAsync(request, cancellationToken);
+
+			if (response.StatusCode == HttpStatusCode.NotFound)
+				continue;
+
+			if (!response.IsSuccessStatusCode)
+			{
+				throw new SearchIndexingException(
+					"Typesense obsolete manual section delete failed.",
+					IsTransient(response.StatusCode));
+			}
+		}
+	}
+
 	private async Task EnsureCollectionAsync(CancellationToken cancellationToken)
 	{
 		if (schemaReady)
@@ -333,7 +365,10 @@ internal sealed class TypesenseSearchIndex(
 		var expectedFields = new Dictionary<string, string>(StringComparer.Ordinal)
 		{
 			["owner_user_id"] = "string",
+			["document_type"] = "string",
 			["receipt_id"] = "string",
+			["product_id"] = "string",
+			["manual_id"] = "string",
 			["document_id"] = "string",
 			["chunk_index"] = "int32",
 			["content"] = "string",
@@ -342,6 +377,14 @@ internal sealed class TypesenseSearchIndex(
 			["transaction_date"] = "int64",
 			["currency"] = "string",
 			["total"] = "float",
+			["product_manufacturer"] = "string",
+			["product_name"] = "string",
+			["model_number"] = "string",
+			["manual_version"] = "string",
+			["locale"] = "string",
+			["warranty_months"] = "int32",
+			["section_heading"] = "string",
+			["is_active_manual"] = "bool",
 			["content_checksum"] = "string",
 			["extracted_at"] = "int64",
 			["embedding"] = "float[]"
@@ -374,7 +417,10 @@ internal sealed class TypesenseSearchIndex(
 			{
 				new { name = "id", type = "string" },
 				new { name = "owner_user_id", type = "string", facet = true },
-				new { name = "receipt_id", type = "string", facet = true },
+				new { name = "document_type", type = "string", facet = true },
+				new { name = "receipt_id", type = "string", facet = true, optional = true },
+				new { name = "product_id", type = "string", facet = true, optional = true },
+				new { name = "manual_id", type = "string", facet = true, optional = true },
 				new { name = "document_id", type = "string", facet = true },
 				new { name = "chunk_index", type = "int32" },
 				new { name = "content", type = "string" },
@@ -383,6 +429,14 @@ internal sealed class TypesenseSearchIndex(
 				new { name = "transaction_date", type = "int64", optional = true },
 				new { name = "currency", type = "string", facet = true, optional = true },
 				new { name = "total", type = "float", optional = true },
+				new { name = "product_manufacturer", type = "string", optional = true },
+				new { name = "product_name", type = "string", optional = true },
+				new { name = "model_number", type = "string", optional = true },
+				new { name = "manual_version", type = "string", facet = true, optional = true },
+				new { name = "locale", type = "string", facet = true, optional = true },
+				new { name = "warranty_months", type = "int32", optional = true },
+				new { name = "section_heading", type = "string", optional = true },
+				new { name = "is_active_manual", type = "bool", facet = true },
 				new { name = "content_checksum", type = "string" },
 				new { name = "extracted_at", type = "int64" },
 				new
@@ -409,6 +463,36 @@ internal sealed class TypesenseSearchIndex(
 				"Typesense schema creation failed.",
 				IsTransient(response.StatusCode));
 		}
+	}
+
+	private async Task<IReadOnlySet<string>> GetManualSectionIdsAsync(
+		Guid productManualId,
+		string ownerUserId,
+		CancellationToken cancellationToken)
+	{
+		var filter = Uri.EscapeDataString(
+			$"manual_id:={productManualId} && {BuildOwnerFilter(ownerUserId)} && document_type:=ProductManual");
+		using var request = CreateRequest(
+			HttpMethod.Get,
+			$"/collections/{options.CollectionName}/documents/search?q=*&query_by=content&filter_by={filter}&per_page=250");
+		using var response = await SendAsync(request, cancellationToken);
+
+		if (!response.IsSuccessStatusCode)
+		{
+			throw new SearchIndexingException(
+				"Typesense manual section lookup failed.",
+				IsTransient(response.StatusCode));
+		}
+
+		var result = await response.Content
+			.ReadFromJsonAsync<TypesenseSearchResponse>(
+				JsonOptions,
+				cancellationToken);
+
+		return result?.Hits
+			.Select(hit => hit.Document.Id)
+			.ToHashSet(StringComparer.Ordinal)
+			?? new HashSet<string>(StringComparer.Ordinal);
 	}
 
 	private async Task<IReadOnlySet<string>> GetChunkIdsAsync(
@@ -522,12 +606,25 @@ internal sealed class TypesenseSearchIndex(
 		return $"owner_user_id:=`{escaped}`";
 	}
 
+	private static string BuildSearchFilter(
+		string ownerUserId,
+		SearchDocumentTypeFilter documentType)
+	{
+		var filter = BuildOwnerFilter(ownerUserId);
+		return documentType switch
+		{
+			SearchDocumentTypeFilter.ProductManual =>
+				$"{filter} && document_type:=ProductManual",
+			SearchDocumentTypeFilter.All => filter,
+			_ => $"{filter} && document_type:=Receipt"
+		};
+	}
+
 	private static SearchIndexMatch ToSearchIndexMatch(TypesenseSearchHit hit)
 	{
 		var document = hit.Document;
 
 		if (document is null ||
-			!Guid.TryParse(document.ReceiptId, out var receiptId) ||
 			!Guid.TryParse(document.DocumentId, out var documentId) ||
 			document.Content is null)
 		{
@@ -542,7 +639,24 @@ internal sealed class TypesenseSearchIndex(
 				: 0d);
 
 		return new SearchIndexMatch(
-			receiptId,
+			string.IsNullOrWhiteSpace(document.DocumentType)
+				? SearchDocumentType.Receipt
+				: Enum.TryParse<SearchDocumentType>(
+					document.DocumentType,
+					ignoreCase: false,
+					out var documentType)
+					? documentType
+					: throw new FormatException(
+						"A Typesense receipt search hit contained an invalid document type."),
+			Guid.TryParse(document.ReceiptId, out var receiptId)
+				? receiptId
+				: Guid.Empty,
+			Guid.TryParse(document.ProductId, out var productId)
+				? productId
+				: null,
+			Guid.TryParse(document.ManualId, out var manualId)
+				? manualId
+				: null,
 			documentId,
 			document.ChunkIndex,
 			document.MerchantName,
@@ -552,6 +666,14 @@ internal sealed class TypesenseSearchIndex(
 			document.Category,
 			document.Currency,
 			document.Total,
+			document.ProductManufacturer,
+			document.ProductName,
+			document.ModelNumber,
+			document.ManualVersion,
+			document.Locale,
+			document.WarrantyMonths,
+			document.SectionHeading,
+			document.IsActiveManual,
 			document.Content,
 			relevance);
 	}
@@ -577,7 +699,12 @@ internal sealed class TypesenseSearchIndex(
 			{
 				id = document.Id,
 				owner_user_id = document.OwnerUserId,
-				receipt_id = document.ReceiptId.ToString(),
+				document_type = document.DocumentType.ToString(),
+				receipt_id = document.ReceiptId == Guid.Empty
+					? null
+					: document.ReceiptId.ToString(),
+				product_id = document.ProductId?.ToString(),
+				manual_id = document.ProductManualId?.ToString(),
 				document_id = document.DocumentId.ToString(),
 				chunk_index = document.ChunkIndex,
 				content = document.Content,
@@ -586,6 +713,14 @@ internal sealed class TypesenseSearchIndex(
 				transaction_date = document.TransactionDate,
 				currency = document.Currency,
 				total = document.Total,
+				product_manufacturer = document.ProductManufacturer,
+				product_name = document.ProductName,
+				model_number = document.ModelNumber,
+				manual_version = document.ManualVersion,
+				locale = document.Locale,
+				warranty_months = document.WarrantyDurationMonths,
+				section_heading = document.SectionHeading,
+				is_active_manual = document.IsActiveManual,
 				content_checksum = document.ContentChecksum,
 				extracted_at = document.ExtractedAtUtc,
 				embedding = document.Embedding
@@ -630,7 +765,10 @@ internal sealed class TypesenseSearchIndex(
 		double? RankFusionScore);
 
 	private sealed record TypesenseReceiptDocument(
+		[property: JsonPropertyName("document_type")] string? DocumentType,
 		[property: JsonPropertyName("receipt_id")] string? ReceiptId,
+		[property: JsonPropertyName("product_id")] string? ProductId,
+		[property: JsonPropertyName("manual_id")] string? ManualId,
 		[property: JsonPropertyName("document_id")] string? DocumentId,
 		[property: JsonPropertyName("chunk_index")] int ChunkIndex,
 		[property: JsonPropertyName("merchant_name")] string? MerchantName,
@@ -638,6 +776,14 @@ internal sealed class TypesenseSearchIndex(
 		[property: JsonPropertyName("category")] string? Category,
 		[property: JsonPropertyName("currency")] string? Currency,
 		[property: JsonPropertyName("total")] double? Total,
+		[property: JsonPropertyName("product_manufacturer")] string? ProductManufacturer,
+		[property: JsonPropertyName("product_name")] string? ProductName,
+		[property: JsonPropertyName("model_number")] string? ModelNumber,
+		[property: JsonPropertyName("manual_version")] string? ManualVersion,
+		[property: JsonPropertyName("locale")] string? Locale,
+		[property: JsonPropertyName("warranty_months")] int? WarrantyMonths,
+		[property: JsonPropertyName("section_heading")] string? SectionHeading,
+		[property: JsonPropertyName("is_active_manual")] bool IsActiveManual,
 		[property: JsonPropertyName("content")] string? Content);
 
 	private sealed record TypesenseHit(

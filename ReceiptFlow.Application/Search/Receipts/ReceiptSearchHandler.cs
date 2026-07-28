@@ -44,20 +44,27 @@ public sealed class ReceiptSearchHandler(
 				ownerUserId,
 				embedding,
 				request.Page,
-				request.PageSize),
+				request.PageSize,
+				MapDocumentType(request.DocumentType)),
 			cancellationToken);
 
 		var matches = result.Matches
 			.GroupBy(match => new
 			{
+				match.DocumentType,
 				match.ReceiptId,
+				match.ProductManualId,
 				match.DocumentId,
 				match.ChunkIndex
 			})
 			.Select(group => group.MaxBy(match => match.RelevanceScore)!)
-			.OrderByDescending(match => match.RelevanceScore)
+			.OrderByDescending(match => match.IsActiveManual)
+			.ThenByDescending(match => match.RelevanceScore)
 			.Select(match => new ReceiptSearchMatchResponse(
+				MapDocumentType(match.DocumentType),
 				match.ReceiptId,
+				match.ProductId,
+				match.ProductManualId,
 				match.DocumentId,
 				match.ChunkIndex,
 				match.MerchantName,
@@ -65,6 +72,14 @@ public sealed class ReceiptSearchHandler(
 				match.Category,
 				match.Currency,
 				match.Total,
+				match.ProductManufacturer,
+				match.ProductName,
+				match.ModelNumber,
+				match.ManualVersion,
+				match.Locale,
+				match.WarrantyDurationMonths,
+				match.SectionHeading,
+				match.IsActiveManual,
 				match.Content,
 				match.RelevanceScore))
 			.ToArray();
@@ -100,4 +115,21 @@ public sealed class ReceiptSearchHandler(
 
 		return query;
 	}
+
+	private static SearchDocumentTypeFilter MapDocumentType(
+		ReceiptSearchDocumentType documentType) =>
+		documentType switch
+		{
+			ReceiptSearchDocumentType.ProductManual => SearchDocumentTypeFilter.ProductManual,
+			ReceiptSearchDocumentType.All => SearchDocumentTypeFilter.All,
+			_ => SearchDocumentTypeFilter.Receipt
+		};
+
+	private static ReceiptSearchDocumentType MapDocumentType(
+		SearchDocumentType documentType) =>
+		documentType switch
+		{
+			SearchDocumentType.ProductManual => ReceiptSearchDocumentType.ProductManual,
+			_ => ReceiptSearchDocumentType.Receipt
+		};
 }

@@ -84,7 +84,7 @@ public sealed class ReceiptAssistantTests
 
 		var response = await handler.HandleAsync(new AskReceiptQuestionRequest("What did I buy?"));
 
-		Assert.Equal("I could not find this in your receipts.", response.Answer);
+		Assert.Equal("I could not find this in your receipts or product manuals.", response.Answer);
 		Assert.Empty(response.Sources);
 		Assert.Equal(0, generator.CallCount);
 		Assert.Equal("bob", Assert.Single(index.Queries).OwnerUserId);

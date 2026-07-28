@@ -18,6 +18,7 @@ export const queryKeys = {
       request.query,
       request.page,
       request.pageSize,
+      request.documentType ?? 'Receipt',
     ] as const,
   receiptSearches: ['receipts', 'search'] as const,
   productLists: ['products', 'list'] as const,

@@ -34,7 +34,10 @@ public sealed record ReceiptSearchChunk(
 public sealed record SearchIndexDocument(
 	string Id,
 	string OwnerUserId,
+	SearchDocumentType DocumentType,
 	Guid ReceiptId,
+	Guid? ProductId,
+	Guid? ProductManualId,
 	Guid DocumentId,
 	int ChunkIndex,
 	string Content,
@@ -43,23 +46,80 @@ public sealed record SearchIndexDocument(
 	long? TransactionDate,
 	string? Currency,
 	double? Total,
+	string? ProductManufacturer,
+	string? ProductName,
+	string? ModelNumber,
+	string? ManualVersion,
+	string? Locale,
+	int? WarrantyDurationMonths,
+	string? SectionHeading,
+	bool IsActiveManual,
 	string ContentChecksum,
 	long ExtractedAtUtc,
-	IReadOnlyList<float> Embedding);
+	IReadOnlyList<float> Embedding)
+{
+	public SearchIndexDocument(
+		string id,
+		string ownerUserId,
+		Guid receiptId,
+		Guid documentId,
+		int chunkIndex,
+		string content,
+		string? merchantName,
+		string? category,
+		long? transactionDate,
+		string? currency,
+		double? total,
+		string contentChecksum,
+		long extractedAtUtc,
+		IReadOnlyList<float> embedding)
+		: this(
+			id,
+			ownerUserId,
+			SearchDocumentType.Receipt,
+			receiptId,
+			ProductId: null,
+			ProductManualId: null,
+			documentId,
+			chunkIndex,
+			content,
+			merchantName,
+			category,
+			transactionDate,
+			currency,
+			total,
+			ProductManufacturer: null,
+			ProductName: null,
+			ModelNumber: null,
+			ManualVersion: null,
+			Locale: null,
+			WarrantyDurationMonths: null,
+			SectionHeading: null,
+			IsActiveManual: false,
+			contentChecksum,
+			extractedAtUtc,
+			embedding)
+	{
+	}
+}
 
 public sealed record SearchIndexQuery(
 	string Query,
 	string OwnerUserId,
 	IReadOnlyList<float> Embedding,
 	int Page,
-	int PageSize);
+	int PageSize,
+	SearchDocumentTypeFilter DocumentType = SearchDocumentTypeFilter.Receipt);
 
 public sealed record SearchIndexPage(
 	long Total,
 	IReadOnlyList<SearchIndexMatch> Matches);
 
 public sealed record SearchIndexMatch(
+	SearchDocumentType DocumentType,
 	Guid ReceiptId,
+	Guid? ProductId,
+	Guid? ProductManualId,
 	Guid DocumentId,
 	int ChunkIndex,
 	string? MerchantName,
@@ -67,8 +127,66 @@ public sealed record SearchIndexMatch(
 	string? Category,
 	string? Currency,
 	double? Total,
+	string? ProductManufacturer,
+	string? ProductName,
+	string? ModelNumber,
+	string? ManualVersion,
+	string? Locale,
+	int? WarrantyDurationMonths,
+	string? SectionHeading,
+	bool IsActiveManual,
 	string Content,
-	double RelevanceScore);
+	double RelevanceScore)
+{
+	public SearchIndexMatch(
+		Guid receiptId,
+		Guid documentId,
+		int chunkIndex,
+		string? merchantName,
+		DateTimeOffset? transactionDate,
+		string? category,
+		string? currency,
+		double? total,
+		string content,
+		double relevanceScore)
+		: this(
+			SearchDocumentType.Receipt,
+			receiptId,
+			ProductId: null,
+			ProductManualId: null,
+			documentId,
+			chunkIndex,
+			merchantName,
+			transactionDate,
+			category,
+			currency,
+			total,
+			ProductManufacturer: null,
+			ProductName: null,
+			ModelNumber: null,
+			ManualVersion: null,
+			Locale: null,
+			WarrantyDurationMonths: null,
+			SectionHeading: null,
+			IsActiveManual: false,
+			content,
+			relevanceScore)
+	{
+	}
+}
+
+public enum SearchDocumentType
+{
+	Receipt,
+	ProductManual
+}
+
+public enum SearchDocumentTypeFilter
+{
+	Receipt,
+	ProductManual,
+	All
+}
 
 public static class SearchChecksum
 {

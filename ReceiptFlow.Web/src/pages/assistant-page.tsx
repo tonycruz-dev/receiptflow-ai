@@ -38,9 +38,9 @@ interface AskVariables extends AskReceiptQuestionRequest {
 
 const suggestedQuestions = [
   'What electronics have I purchased?',
+  'What warranty does my product manual describe?',
+  'How do I clean the filter in the manual?',
   'How much have I spent in total?',
-  'Which receipts include delivery charges?',
-  'What are my most recent purchases?',
 ];
 
 export function Component() {
@@ -119,7 +119,7 @@ export function Component() {
             <div>
               <h2 className="text-sm font-semibold">ReceiptFlow Assistant</h2>
               <p className="text-xs text-muted-foreground">
-                Answers are grounded in your indexed receipt evidence
+                Answers are grounded in indexed receipt and manual evidence
               </p>
             </div>
 
@@ -174,7 +174,7 @@ function AssistantPageHeader() {
         <div>
           <div className="mb-2 flex w-fit items-center gap-2 rounded-full border border-primary/15 bg-background/70 px-3 py-1 text-xs font-medium text-primary backdrop-blur">
             <Sparkles className="size-3.5" aria-hidden="true" />
-            Grounded receipt intelligence
+            Grounded document intelligence
           </div>
 
           <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
@@ -182,9 +182,8 @@ function AssistantPageHeader() {
           </h1>
 
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-            Ask questions about your purchases, spending and merchants. Every
-            answer is grounded in your indexed receipts and linked to its
-            supporting evidence.
+            Ask questions about purchases, spending, merchants and confirmed
+            product manuals. Every answer links back to supporting evidence.
           </p>
         </div>
       </div>
@@ -333,10 +332,10 @@ function AssistantLoading() {
 
         <div>
           <p className="text-sm font-semibold">
-            Reviewing your receipt evidence
+            Reviewing your document evidence
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Searching your documents and preparing a grounded answer…
+            Searching receipts and manuals to prepare a grounded answer…
           </p>
         </div>
       </div>
@@ -390,7 +389,7 @@ function AssistantComposer({
           maxLength={maximumQuestionLength}
           rows={3}
           disabled={isPending}
-          placeholder="For example: What electronics did I purchase and how much did I spend?"
+          placeholder="For example: What does the product manual say about the warranty?"
           className="w-full resize-none border-0 bg-transparent p-2 text-sm leading-6 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60"
         />
 
@@ -398,7 +397,7 @@ function AssistantComposer({
           <div>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Bot className="size-3.5" aria-hidden="true" />
-              Answers use your indexed receipt evidence
+              Answers use your indexed receipt and manual evidence
             </p>
 
             <p className="mt-1 text-xs text-muted-foreground">
@@ -456,9 +455,9 @@ function AssistantPrivacyNotice() {
       <div>
         <p className="text-sm font-medium">Private to your account</p>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          ReceiptFlow restricts retrieval to receipts belonging to your
-          authenticated account. Always verify important financial information
-          against the linked source receipt.
+          ReceiptFlow restricts retrieval to documents belonging to your
+          authenticated account. Always verify important information against the
+          linked source.
         </p>
       </div>
     </div>
@@ -466,6 +465,34 @@ function AssistantPrivacyNotice() {
 }
 
 function AssistantSource({ source }: { source: ReceiptAnswerSource }) {
+  if (source.sourceType === 'ProductManual') {
+    return <ManualAssistantSource source={source} />;
+  }
+
+  return <ReceiptAssistantSource source={source} />;
+}
+
+function ManualAssistantSource({ source }: { source: ReceiptAnswerSource }) {
+  return (
+    <SourceCitationCard
+      title={
+        [source.productManufacturer, source.productName]
+          .filter(Boolean)
+          .join(' ') || `Manual source ${source.citation.toString()}`
+      }
+      reference={formatManualSourceReference(source)}
+      {...(source.sectionHeading
+        ? { excerpt: `Section: ${source.sectionHeading}` }
+        : {})}
+      {...(source.productId ? { productId: source.productId } : {})}
+      {...(source.productManualId
+        ? { productManualId: source.productManualId }
+        : {})}
+    />
+  );
+}
+
+function ReceiptAssistantSource({ source }: { source: ReceiptAnswerSource }) {
   const documents = useReceiptDocuments(source.receiptId);
 
   const fileName = documents.data?.find(
@@ -487,6 +514,20 @@ function AssistantSource({ source }: { source: ReceiptAnswerSource }) {
       documentId={source.documentId}
     />
   );
+}
+
+function formatManualSourceReference(source: ReceiptAnswerSource) {
+  const details = [`Source [${source.citation.toString()}]`];
+
+  if (source.modelNumber) details.push(source.modelNumber);
+  if (source.manualVersion) details.push(`Version ${source.manualVersion}`);
+  if (source.locale) details.push(source.locale);
+  if (source.warrantyDurationMonths !== null) {
+    details.push(`${source.warrantyDurationMonths.toString()} month warranty`);
+  }
+  if (source.isActiveManual) details.push('Active manual');
+
+  return details.join(' · ');
 }
 
 function formatSourceReference(source: {

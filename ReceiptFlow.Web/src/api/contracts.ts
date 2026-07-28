@@ -215,6 +215,7 @@ export interface ReceiptSearchRequest {
   query: string;
   page: number;
   pageSize: number;
+  documentType?: 'Receipt' | 'ProductManual' | 'All';
 }
 
 export interface ReceiptSearchResponse {
@@ -225,7 +226,10 @@ export interface ReceiptSearchResponse {
 }
 
 export interface ReceiptSearchMatch {
+  documentType: 'Receipt' | 'ProductManual';
   receiptId: string;
+  productId: string | null;
+  productManualId: string | null;
   documentId: string;
   chunkIndex: number;
   merchantName: string | null;
@@ -233,6 +237,14 @@ export interface ReceiptSearchMatch {
   category: string | null;
   currency: string | null;
   total: number | null;
+  productManufacturer: string | null;
+  productName: string | null;
+  modelNumber: string | null;
+  manualVersion: string | null;
+  locale: string | null;
+  warrantyDurationMonths: number | null;
+  sectionHeading: string | null;
+  isActiveManual: boolean;
   content: string;
   relevanceScore: number;
 }
@@ -248,12 +260,23 @@ export interface AskReceiptQuestionResponse {
 
 export interface ReceiptAnswerSource {
   citation: number;
+  sourceType: 'Receipt' | 'ProductManual';
   receiptId: string;
+  productId: string | null;
+  productManualId: string | null;
   documentId: string;
   merchantName: string | null;
   transactionDate: string | null;
   total: number | null;
   currency: string | null;
+  productManufacturer: string | null;
+  productName: string | null;
+  modelNumber: string | null;
+  manualVersion: string | null;
+  locale: string | null;
+  warrantyDurationMonths: number | null;
+  sectionHeading: string | null;
+  isActiveManual: boolean;
 }
 
 export interface ProblemDetails {

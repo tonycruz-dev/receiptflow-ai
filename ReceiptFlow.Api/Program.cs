@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
+using System.Text.Json.Serialization;
 using ReceiptFlow.Api.Authentication;
 using ReceiptFlow.Api.Options;
 using ReceiptFlow.Application.Abstractions.Authentication;
@@ -102,7 +103,9 @@ builder.Services.AddScoped<ListProductManualsHandler>();
 builder.Services.AddScoped<GetProductManualHandler>();
 builder.Services.AddScoped<ConfirmProductManualHandler>();
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+	.AddJsonOptions(options =>
+		options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 const string frontendCorsPolicy = "ReceiptFlowFrontend";
 var productionOrigins = builder.Configuration
 	.GetSection("Cors:AllowedOrigins")

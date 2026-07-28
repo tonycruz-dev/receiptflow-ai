@@ -12,4 +12,9 @@ internal sealed class MassTransitProductManualEventPublisher(
 		ProductManualUploadedV1 message,
 		CancellationToken cancellationToken) =>
 		publishEndpoint.Publish(message, cancellationToken);
+
+	public Task PublishAsync(
+		ProductManualConfirmedV1 message,
+		CancellationToken cancellationToken) =>
+		publishEndpoint.Publish(message, cancellationToken);
 }

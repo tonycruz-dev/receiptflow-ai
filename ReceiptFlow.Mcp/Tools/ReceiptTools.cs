@@ -42,6 +42,29 @@ public sealed class ReceiptTools(
 				cancellationToken));
 
 	[McpServerTool(
+		Name = "search_manuals",
+		ReadOnly = true,
+		Idempotent = true,
+		UseStructuredContent = true)]
+	[Description("Searches only the authenticated user's confirmed product manuals using tenant-isolated hybrid retrieval.")]
+	public Task<ReceiptSearchResponse> SearchManualsAsync(
+		ClaimsPrincipal user,
+		[Description("Manual search text, from 1 to 1000 characters.")] string query,
+		[Description("One-based result page.")] int page = 1,
+		[Description("Results per page, from 1 to 50.")] int pageSize = 10,
+		CancellationToken cancellationToken = default) =>
+		ExecuteAsync(
+			"search_manuals",
+			user,
+			() => searchHandler.HandleAsync(
+				new ReceiptSearchRequest(
+					query,
+					page,
+					pageSize,
+					ReceiptSearchDocumentType.ProductManual),
+				cancellationToken));
+
+	[McpServerTool(
 		Name = "ask_receipts",
 		ReadOnly = true,
 		Idempotent = true,
@@ -55,7 +78,28 @@ public sealed class ReceiptTools(
 			"ask_receipts",
 			user,
 			() => answerHandler.HandleAsync(
-				new AskReceiptQuestionRequest(question),
+				new AskReceiptQuestionRequest(
+					question,
+					ReceiptSearchDocumentType.Receipt),
+				cancellationToken));
+
+	[McpServerTool(
+		Name = "ask_product_manuals",
+		ReadOnly = true,
+		Idempotent = true,
+		UseStructuredContent = true)]
+	[Description("Answers a question using grounded evidence only from the authenticated user's confirmed product manuals, with trusted citations.")]
+	public Task<AskReceiptQuestionResponse> AskProductManualsAsync(
+		ClaimsPrincipal user,
+		[Description("Question about the authenticated user's product manuals, from 1 to 1000 characters.")] string question,
+		CancellationToken cancellationToken = default) =>
+		ExecuteAsync(
+			"ask_product_manuals",
+			user,
+			() => answerHandler.HandleAsync(
+				new AskReceiptQuestionRequest(
+					question,
+					ReceiptSearchDocumentType.ProductManual),
 				cancellationToken));
 
 	private async Task<T> ExecuteAsync<T>(

@@ -15,4 +15,11 @@ public interface ISearchIndex
 		string ownerUserId,
 		IReadOnlySet<string> currentChunkIds,
 		CancellationToken cancellationToken = default);
+
+	Task DeleteObsoleteManualSectionsAsync(
+		Guid productManualId,
+		string ownerUserId,
+		IReadOnlySet<string> currentSectionIds,
+		CancellationToken cancellationToken = default) =>
+		Task.CompletedTask;
 }

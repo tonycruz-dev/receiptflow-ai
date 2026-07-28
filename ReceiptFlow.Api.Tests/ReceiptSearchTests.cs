@@ -161,6 +161,22 @@ public sealed class ReceiptSearchTests
 	}
 
 	[Fact]
+	public async Task Handler_DerivesOwnerAndPassesDocumentTypeFilter()
+	{
+		var index = new CapturingSearchIndex();
+		var handler = CreateHandler("user-b", searchIndex: index);
+
+		await handler.HandleAsync(
+			new ReceiptSearchRequest(
+				"warranty",
+				DocumentType: ReceiptSearchDocumentType.ProductManual));
+
+		var query = Assert.Single(index.Queries);
+		Assert.Equal("user-b", query.OwnerUserId);
+		Assert.Equal(SearchDocumentTypeFilter.ProductManual, query.DocumentType);
+	}
+
+	[Fact]
 	public async Task Handler_BobCannotRetrieveAlicesIndexedReceipt()
 	{
 		var aliceReceipt = CreateMatch(
@@ -217,10 +233,10 @@ public sealed class ReceiptSearchTests
 		using var body = JsonDocument.Parse(request.Body);
 		var search = body.RootElement.GetProperty("searches")[0];
 		Assert.Equal(
-			"owner_user_id:=`bob\\`tenant\\\\id`",
+			"owner_user_id:=`bob\\`tenant\\\\id` && document_type:=Receipt",
 			search.GetProperty("filter_by").GetString());
 		Assert.Equal(
-			"content,merchant_name,category,currency",
+			"content,merchant_name,category,currency,product_manufacturer,product_name,model_number,manual_version,section_heading",
 			search.GetProperty("query_by").GetString());
 		Assert.Contains("embedding:([", search.GetProperty("vector_query").GetString());
 		Assert.Equal(
@@ -565,7 +581,10 @@ public sealed class ReceiptSearchTests
 			fields = new object[]
 			{
 				new { name = "owner_user_id", type = "string", facet = true },
+				new { name = "document_type", type = "string", facet = true },
 				new { name = "receipt_id", type = "string" },
+				new { name = "product_id", type = "string" },
+				new { name = "manual_id", type = "string" },
 				new { name = "document_id", type = "string" },
 				new { name = "chunk_index", type = "int32" },
 				new { name = "content", type = "string" },
@@ -574,6 +593,14 @@ public sealed class ReceiptSearchTests
 				new { name = "transaction_date", type = "int64" },
 				new { name = "currency", type = "string" },
 				new { name = "total", type = "float" },
+				new { name = "product_manufacturer", type = "string" },
+				new { name = "product_name", type = "string" },
+				new { name = "model_number", type = "string" },
+				new { name = "manual_version", type = "string" },
+				new { name = "locale", type = "string" },
+				new { name = "warranty_months", type = "int32" },
+				new { name = "section_heading", type = "string" },
+				new { name = "is_active_manual", type = "bool" },
 				new { name = "content_checksum", type = "string" },
 				new { name = "extracted_at", type = "int64" },
 				new { name = "embedding", type = "float[]", num_dim = dimensions }

@@ -1,5 +1,7 @@
 using ReceiptFlow.Application.Abstractions.Authentication;
+using ReceiptFlow.Application.Abstractions.Messaging;
 using ReceiptFlow.Application.Abstractions.Persistence;
+using ReceiptFlow.Contracts;
 using ReceiptFlow.Domain.Enums;
 
 namespace ReceiptFlow.Application.Products.Manuals;
@@ -7,7 +9,8 @@ namespace ReceiptFlow.Application.Products.Manuals;
 public sealed class ConfirmProductManualHandler(
 	ICurrentUser currentUser,
 	IProductRepository productRepository,
-	IUnitOfWork unitOfWork)
+	IUnitOfWork unitOfWork,
+	IProductManualEventPublisher eventPublisher)
 {
 	public async Task<ConfirmProductManualResult> HandleAsync(
 		Guid productId,
@@ -67,6 +70,15 @@ public sealed class ConfirmProductManualHandler(
 				request.WarrantyDurationMonths,
 				request.Locale);
 			manual.Document.MarkCompleted();
+			await eventPublisher.PublishAsync(
+				new ProductManualConfirmedV1(
+					Guid.NewGuid(),
+					product.Id,
+					manual.Id,
+					manual.DocumentId,
+					currentUser.UserId,
+					DateTimeOffset.UtcNow),
+				cancellationToken);
 		}
 		catch (ArgumentException exception)
 		{

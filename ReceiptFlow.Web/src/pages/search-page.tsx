@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import {
+  BookOpen,
   ChevronLeft,
   ChevronRight,
   FileSearch,
@@ -8,6 +9,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useState, type SyntheticEvent } from 'react';
+import type { ReceiptSearchRequest } from '@/api/contracts';
 import { getSafeErrorMessage } from '@/api/error-message';
 import { queryKeys } from '@/api/query-keys';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -33,11 +35,14 @@ export function Component() {
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [documentType, setDocumentType] =
+    useState<NonNullable<ReceiptSearchRequest['documentType']>>('Receipt');
 
-  const request = {
+  const request: ReceiptSearchRequest = {
     query,
     page,
     pageSize,
+    ...(documentType === 'Receipt' ? {} : { documentType }),
   };
 
   const search = useQuery({
@@ -77,7 +82,12 @@ export function Component() {
       <SearchPageHeader
         draft={draft}
         isSearching={search.isFetching}
+        documentType={documentType}
         onDraftChange={setDraft}
+        onDocumentTypeChange={(nextType) => {
+          setDocumentType(nextType);
+          setPage(1);
+        }}
         onSubmit={handleSubmit}
       />
 
@@ -90,6 +100,7 @@ export function Component() {
       ) : (
         <SearchResultsPanel
           query={query}
+          documentType={documentType}
           page={page}
           totalPages={totalPages}
           search={search}
@@ -110,14 +121,20 @@ export function Component() {
 interface SearchPageHeaderProps {
   draft: string;
   isSearching: boolean;
+  documentType: NonNullable<ReceiptSearchRequest['documentType']>;
   onDraftChange: (value: string) => void;
+  onDocumentTypeChange: (
+    value: NonNullable<ReceiptSearchRequest['documentType']>,
+  ) => void;
   onSubmit: (event: SyntheticEvent<HTMLFormElement>) => void;
 }
 
 function SearchPageHeader({
   draft,
   isSearching,
+  documentType,
   onDraftChange,
+  onDocumentTypeChange,
   onSubmit,
 }: SearchPageHeaderProps) {
   return (
@@ -145,12 +162,12 @@ function SearchPageHeader({
             </div>
 
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Search your receipts
+              Receipt search
             </h1>
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
               Search by merchant, product, category, date, amount or information
-              contained inside your uploaded receipt documents.
+              contained inside your uploaded receipts and confirmed manuals.
             </p>
           </div>
         </div>
@@ -203,8 +220,36 @@ function SearchPageHeader({
           </Button>
         </form>
 
+        <div
+          className="mt-4 inline-flex rounded-xl border bg-background/80 p-1 shadow-sm"
+          aria-label="Search document type"
+        >
+          {documentTypeOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                documentType === option.value
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              aria-pressed={documentType === option.value}
+              onClick={() => {
+                onDocumentTypeChange(option.value);
+              }}
+            >
+              {option.value === 'ProductManual' ? (
+                <BookOpen className="size-3.5" aria-hidden="true" />
+              ) : (
+                <FileSearch className="size-3.5" aria-hidden="true" />
+              )}
+              {option.label}
+            </button>
+          ))}
+        </div>
+
         <p className="mt-3 text-xs text-muted-foreground">
-          Search results are restricted to receipts belonging to your account.
+          Search results are restricted to documents belonging to your account.
         </p>
       </div>
     </header>
@@ -261,6 +306,7 @@ function SearchWelcome({
 
 interface SearchResultsPanelProps {
   query: string;
+  documentType: NonNullable<ReceiptSearchRequest['documentType']>;
   page: number;
   totalPages: number;
   search: ReturnType<typeof useReceiptSearchResult>;
@@ -293,6 +339,7 @@ function useReceiptSearchResult() {
 
 function SearchResultsPanel({
   query,
+  documentType,
   page,
   totalPages,
   search,
@@ -326,7 +373,8 @@ function SearchResultsPanel({
 
           <p className="mt-1 text-sm text-muted-foreground">
             Results for{' '}
-            <span className="font-medium text-foreground">“{query}”</span>
+            <span className="font-medium text-foreground">“{query}”</span> in{' '}
+            {documentTypeLabel(documentType).toLowerCase()}
           </p>
         </div>
 
@@ -353,7 +401,7 @@ function SearchResultsPanel({
           <EmptyState
             icon={Search}
             title="No matching receipts"
-            description={`No receipt evidence matched “${query}”. Try a merchant, product name or broader description.`}
+            description={`No ${documentTypeLabel(documentType).toLowerCase()} evidence matched “${query}”. Try a merchant, product name or broader description.`}
           />
         ) : search.data ? (
           <div className="space-y-6">
@@ -379,6 +427,23 @@ function SearchResultsPanel({
       </div>
     </section>
   );
+}
+
+const documentTypeOptions = [
+  { value: 'Receipt', label: 'Receipts' },
+  { value: 'ProductManual', label: 'Manuals' },
+  { value: 'All', label: 'All' },
+] satisfies {
+  value: NonNullable<ReceiptSearchRequest['documentType']>;
+  label: string;
+}[];
+
+function documentTypeLabel(
+  documentType: NonNullable<ReceiptSearchRequest['documentType']>,
+) {
+  if (documentType === 'ProductManual') return 'Manual';
+  if (documentType === 'All') return 'All document';
+  return 'Receipt';
 }
 
 interface SearchPaginationProps {

@@ -1,4 +1,4 @@
-import { CalendarDays, Tag, WalletCards } from 'lucide-react';
+import { BookOpen, CalendarDays, Tag, WalletCards } from 'lucide-react';
 import type { ReceiptSearchMatch } from '@/api/contracts';
 import { Card, CardContent } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
@@ -23,9 +23,27 @@ export function SearchResultCard({ result }: SearchResultCardProps) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="font-semibold">
-              {result.merchantName ?? 'Unknown merchant'}
+              {result.documentType === 'ProductManual'
+                ? [result.productManufacturer, result.productName]
+                    .filter(Boolean)
+                    .join(' ') || 'Product manual'
+                : (result.merchantName ?? 'Unknown merchant')}
             </h2>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
+              {result.documentType === 'ProductManual' ? (
+                <span className="flex items-center gap-1.5">
+                  <BookOpen aria-hidden="true" className="size-3.5" />
+                  {[
+                    result.modelNumber,
+                    result.manualVersion
+                      ? `Version ${result.manualVersion}`
+                      : null,
+                    result.sectionHeading,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              ) : null}
               {result.transactionDate ? (
                 <span className="flex items-center gap-1.5">
                   <CalendarDays aria-hidden="true" className="size-3.5" />

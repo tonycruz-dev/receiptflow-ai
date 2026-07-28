@@ -16,7 +16,7 @@ public sealed partial class AskReceiptQuestionHandler(
 	public const int MaximumRetrievedChunks = 5;
 	public const int MaximumEvidenceCharacters = 12000;
 	private const string NoEvidenceAnswer =
-		"I could not find this in your receipts.";
+		"I could not find this in your receipts or product manuals.";
 
 	public async Task<AskReceiptQuestionResponse> HandleAsync(
 		AskReceiptQuestionRequest request,
@@ -34,7 +34,8 @@ public sealed partial class AskReceiptQuestionHandler(
 			new ReceiptSearchRequest(
 				question,
 				Page: 1,
-				PageSize: MaximumRetrievedChunks),
+				PageSize: MaximumRetrievedChunks,
+				DocumentType: request.DocumentType),
 			cancellationToken);
 
 		var selected = SelectEvidence(search.Matches);
@@ -99,12 +100,16 @@ public sealed partial class AskReceiptQuestionHandler(
 		IReadOnlyList<ReceiptSearchMatchResponse> matches)
 	{
 		var selected = new List<SelectedEvidence>();
-		var citations = new Dictionary<(Guid ReceiptId, Guid DocumentId), int>();
+		var citations = new Dictionary<(ReceiptSearchDocumentType DocumentType, Guid DocumentId), int>();
 		var usedCharacters = 0;
 
-		foreach (var match in matches.Take(MaximumRetrievedChunks))
+		foreach (var match in matches
+			.OrderByDescending(IsExplicitVersionQuery)
+			.ThenByDescending(match => match.DocumentType == ReceiptSearchDocumentType.ProductManual && match.IsActiveManual)
+			.ThenByDescending(match => match.RelevanceScore)
+			.Take(MaximumRetrievedChunks))
 		{
-			var key = (match.ReceiptId, match.DocumentId);
+			var key = (match.DocumentType, match.DocumentId);
 			var separatorCharacters = citations.ContainsKey(key) ? 1 : 0;
 			var remaining = MaximumEvidenceCharacters - usedCharacters - separatorCharacters;
 			if (remaining <= 0)
@@ -126,18 +131,38 @@ public sealed partial class AskReceiptQuestionHandler(
 				new ReceiptAnswerEvidence(
 					citation,
 					content,
+					match.DocumentType.ToString(),
 					match.MerchantName,
 					match.TransactionDate,
 					match.Total,
-					match.Currency),
+					match.Currency,
+					match.ProductManufacturer,
+					match.ProductName,
+					match.ModelNumber,
+					match.ManualVersion,
+					match.Locale,
+					match.WarrantyDurationMonths,
+					match.SectionHeading,
+					match.IsActiveManual),
 				new ReceiptAnswerSourceResponse(
 					citation,
+					match.DocumentType.ToString(),
 					match.ReceiptId,
+					match.ProductId,
+					match.ProductManualId,
 					match.DocumentId,
 					match.MerchantName,
 					match.TransactionDate,
 					match.Total,
-					match.Currency)));
+					match.Currency,
+					match.ProductManufacturer,
+					match.ProductName,
+					match.ModelNumber,
+					match.ManualVersion,
+					match.Locale,
+					match.WarrantyDurationMonths,
+					match.SectionHeading,
+					match.IsActiveManual)));
 			usedCharacters += content.Length + separatorCharacters;
 		}
 
@@ -151,6 +176,10 @@ public sealed partial class AskReceiptQuestionHandler(
 				group.First().Source))
 			.ToArray();
 	}
+
+	private static bool IsExplicitVersionQuery(ReceiptSearchMatchResponse match) =>
+		match.DocumentType == ReceiptSearchDocumentType.ProductManual &&
+		match.ManualVersion is not null;
 
 	private static string Validate(AskReceiptQuestionRequest request)
 	{

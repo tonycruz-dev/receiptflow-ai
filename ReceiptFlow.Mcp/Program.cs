@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
+using System.Text.Json.Serialization;
 using ModelContextProtocol.AspNetCore.Authentication;
 using ReceiptFlow.Application.Abstractions.Authentication;
 using ReceiptFlow.Application.Assistant.Receipts;
@@ -66,6 +67,9 @@ builder.Services.AddAuthorization(options =>
 		.RequireClaim("sub")
 		.Build();
 });
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+	options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddScoped<McpRequestUserContext>();
 builder.Services.AddScoped<ICurrentUser>(services =>

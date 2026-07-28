@@ -61,9 +61,9 @@ public sealed class ReceiptMcpTests
 		var payload = await ReadMcpPayloadAsync(response);
 		var tools = payload.GetProperty("result").GetProperty("tools");
 
-		Assert.Equal(2, tools.GetArrayLength());
+		Assert.Equal(4, tools.GetArrayLength());
 		Assert.Equal(
-			["ask_receipts", "search_receipts"],
+			["ask_product_manuals", "ask_receipts", "search_manuals", "search_receipts"],
 			 tools.EnumerateArray()
 				.Select(tool => tool.GetProperty("name").GetString()!)
 				.Order()
@@ -135,6 +135,58 @@ public sealed class ReceiptMcpTests
 		Assert.Equal("Grounded [1]", result.Answer);
 		Assert.Equal(match.ReceiptId, Assert.Single(result.Sources).ReceiptId);
 		Assert.Equal("trusted receipt evidence", Assert.Single(generator.Evidence).Content);
+	}
+
+	[Fact]
+	public async Task ManualTools_UseAuthenticatedSubjectAndManualFilter()
+	{
+		var productId = Guid.NewGuid();
+		var manualId = Guid.NewGuid();
+		var match = new SearchIndexMatch(
+			SearchDocumentType.ProductManual,
+			ReceiptId: Guid.Empty,
+			productId,
+			manualId,
+			Guid.NewGuid(),
+			0,
+			MerchantName: null,
+			TransactionDate: null,
+			Category: null,
+			Currency: null,
+			Total: null,
+			ProductManufacturer: "Acme",
+			ProductName: "Toaster",
+			ModelNumber: "TX-100",
+			ManualVersion: "2.0",
+			Locale: "en-gb",
+			WarrantyDurationMonths: 24,
+			SectionHeading: "Warranty",
+			IsActiveManual: true,
+			"Warranty lasts 24 months.",
+			0.9);
+		var index = new TenantIndex(new Dictionary<string, SearchIndexMatch[]>
+		{
+			["bob"] = [match]
+		});
+		var generator = new StubAnswerGenerator(
+			new ReceiptGeneratedAnswer("The warranty is 24 months [1]", [1]));
+		var tools = CreateTools(index, generator);
+
+		var search = await tools.SearchManualsAsync(
+			Principal("bob"),
+			"warranty");
+		var answer = await tools.AskProductManualsAsync(
+			Principal("bob"),
+			"What is the warranty?");
+
+		Assert.Equal(SearchDocumentTypeFilter.ProductManual, index.Queries[0].DocumentType);
+		Assert.Equal(SearchDocumentTypeFilter.ProductManual, index.Queries[1].DocumentType);
+		Assert.Equal("bob", index.Queries[0].OwnerUserId);
+		Assert.Equal(manualId, Assert.Single(search.Matches).ProductManualId);
+		var source = Assert.Single(answer.Sources);
+		Assert.Equal("ProductManual", source.SourceType);
+		Assert.Equal(productId, source.ProductId);
+		Assert.Equal(manualId, source.ProductManualId);
 	}
 
 	[Fact]

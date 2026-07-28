@@ -525,6 +525,9 @@ public static class DependencyInjection
 					cfg.Message<ProductManualUploadedV1>(message =>
 						message.SetEntityName(
 							"product-manual-uploaded-v1"));
+					cfg.Message<ProductManualConfirmedV1>(message =>
+						message.SetEntityName(
+							"product-manual-confirmed-v1"));
 					cfg.ConfigureEndpoints(context);
 				});
 			}
