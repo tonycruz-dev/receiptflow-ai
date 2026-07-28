@@ -254,6 +254,146 @@ public sealed class ProductManualApiTests
 		Assert.Equal(HttpStatusCode.NotFound, manualUpload.StatusCode);
 	}
 
+	[Fact]
+	public async Task ManualDetail_ExposesTypedSuggestionsAndOrderedSections()
+	{
+		await using var factory = new ReceiptFlowApiFactory();
+		using var client = factory.CreateAuthenticatedClient("user-a");
+		var product = await CreateProductAsync(client);
+		var manual = await UploadManualAsync(client, product.ProductId, "manual.pdf");
+		await PrepareForReviewAsync(factory, manual.ProductManualId);
+
+		var detail = await client.GetFromJsonAsync<ProductManualResponse>(
+			$"/api/products/{product.ProductId}/manuals/{manual.ProductManualId}");
+
+		Assert.NotNull(detail);
+		Assert.NotNull(detail.Extraction);
+		Assert.Equal("Suggested Corp", detail.Extraction.SuggestedManufacturer);
+		Assert.Equal("2.0", detail.Extraction.SuggestedVersionLabel);
+		Assert.Equal(24, detail.Extraction.SuggestedWarrantyDurationMonths);
+		Assert.Equal([0, 1], detail.Sections.Select(section => section.Ordinal));
+		Assert.Equal(["Safety", "Using the product"], detail.Sections.Select(section => section.HeadingPath));
+		Assert.DoesNotContain("provider", (await client.GetStringAsync(
+			$"/api/products/{product.ProductId}/manuals/{manual.ProductManualId}")),
+			StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public async Task ConfirmManual_UpdatesDetailsActivatesVersionAndCompletesDocument()
+	{
+		await using var factory = new ReceiptFlowApiFactory();
+		using var client = factory.CreateAuthenticatedClient("user-a");
+		var product = await CreateProductAsync(client);
+		var manual = await UploadManualAsync(client, product.ProductId, "manual.pdf");
+		await PrepareForReviewAsync(factory, manual.ProductManualId);
+
+		var response = await client.PutAsJsonAsync(
+			$"/api/products/{product.ProductId}/manuals/{manual.ProductManualId}/confirmation",
+			new ConfirmProductManualRequest(
+				"Confirmed Corp",
+				"Confirmed Toaster",
+				"CT-200",
+				"2.1",
+				"en-gb",
+				36));
+		var confirmed = await response.Content.ReadFromJsonAsync<ProductManualResponse>();
+
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		Assert.NotNull(confirmed);
+		Assert.Equal("Confirmed Corp", confirmed.Manufacturer);
+		Assert.Equal("Confirmed Toaster", confirmed.ProductName);
+		Assert.Equal("CT-200", confirmed.ModelNumber);
+		Assert.Equal("2.1", confirmed.VersionLabel);
+		Assert.Equal("en-gb", confirmed.Locale);
+		Assert.Equal(36, confirmed.WarrantyDurationMonths);
+		Assert.Equal("Active", confirmed.ManualLifecycleStatus);
+		Assert.Equal("Completed", confirmed.DocumentProcessingStatus);
+	}
+
+	[Fact]
+	public async Task ConfirmReplacement_AtomicallyActivatesNewVersionAndSupersedesPrevious()
+	{
+		await using var factory = new ReceiptFlowApiFactory();
+		using var client = factory.CreateAuthenticatedClient("user-a");
+		var product = await CreateProductAsync(client);
+		Guid originalId;
+
+		using (var scope = factory.Services.CreateScope())
+		{
+			var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+			var storedProduct = await dbContext.Products
+				.Include(candidate => candidate.Manuals)
+				.SingleAsync(candidate => candidate.Id == product.ProductId);
+			var document = new Document(
+				"user-a",
+				"manual-v1.pdf",
+				$"manuals/{Guid.NewGuid():N}.pdf",
+				"application/pdf",
+				ValidPdf().Length,
+				DocumentType.ProductManual);
+			var original = storedProduct.AddManualVersion(document);
+			storedProduct.ActivateManualVersion(original.Id, "1.0", 12);
+			originalId = original.Id;
+			await dbContext.SaveChangesAsync();
+		}
+
+		var replacement = await UploadManualAsync(
+			client,
+			product.ProductId,
+			"manual-v2.pdf",
+			originalId);
+		await PrepareForReviewAsync(factory, replacement.ProductManualId);
+
+		var response = await client.PutAsJsonAsync(
+			$"/api/products/{product.ProductId}/manuals/{replacement.ProductManualId}/confirmation",
+			new ConfirmProductManualRequest(
+				"Acme",
+				"Toaster",
+				"TX-100",
+				"2.0",
+				"und",
+				24));
+
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		var versions = await client.GetFromJsonAsync<ProductManualResponse[]>(
+			$"/api/products/{product.ProductId}/manuals");
+		Assert.Equal(
+			"Active",
+			Assert.Single(versions!, candidate =>
+				candidate.ProductManualId == replacement.ProductManualId).ManualLifecycleStatus);
+		Assert.Equal(
+			"Superseded",
+			Assert.Single(versions!, candidate =>
+				candidate.ProductManualId == originalId).ManualLifecycleStatus);
+	}
+
+	[Fact]
+	public async Task ConfirmManual_ReturnsConflictUntilReviewAndNotFoundAcrossOwners()
+	{
+		await using var factory = new ReceiptFlowApiFactory();
+		using var userA = factory.CreateAuthenticatedClient("user-a");
+		using var userB = factory.CreateAuthenticatedClient("user-b");
+		var product = await CreateProductAsync(userA);
+		var manual = await UploadManualAsync(userA, product.ProductId, "manual.pdf");
+		var request = new ConfirmProductManualRequest(
+			"Acme",
+			"Toaster",
+			"TX-100",
+			"1.0",
+			"en",
+			12);
+
+		var notReady = await userA.PutAsJsonAsync(
+			$"/api/products/{product.ProductId}/manuals/{manual.ProductManualId}/confirmation",
+			request);
+		var crossOwner = await userB.PutAsJsonAsync(
+			$"/api/products/{product.ProductId}/manuals/{manual.ProductManualId}/confirmation",
+			request);
+
+		Assert.Equal(HttpStatusCode.Conflict, notReady.StatusCode);
+		Assert.Equal(HttpStatusCode.NotFound, crossOwner.StatusCode);
+	}
+
 	public static TheoryData<string, string, byte[]> InvalidManualFiles() =>
 		new()
 		{
@@ -313,6 +453,36 @@ public sealed class ProductManualApiTests
 		}
 
 		return multipart;
+	}
+
+	private static async Task PrepareForReviewAsync(
+		ReceiptFlowApiFactory factory,
+		Guid productManualId)
+	{
+		using var scope = factory.Services.CreateScope();
+		var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+		var manual = await dbContext.ProductManuals
+			.Include(candidate => candidate.Document)
+			.SingleAsync(candidate => candidate.Id == productManualId);
+
+		manual.Document.MarkProcessing();
+		manual.Document.MarkAwaitingReview(2, null);
+		manual.MarkReviewRequired();
+		dbContext.ManualExtractions.Add(new ManualExtraction(
+			manual,
+			"Suggested Corp",
+			"Suggested Toaster",
+			"ST-100",
+			"2.0",
+			24,
+			0.91m,
+			"test-provider",
+			"test-model",
+			null));
+		dbContext.ManualSections.AddRange(
+			new ManualSection(manual, 1, "Using the product", "Plug it in.", 2, 2),
+			new ManualSection(manual, 0, "Safety", "Read all warnings.", 1, 1));
+		await dbContext.SaveChangesAsync();
 	}
 
 	private static byte[] ValidPdf() =>

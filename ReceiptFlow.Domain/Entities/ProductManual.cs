@@ -126,6 +126,23 @@ public sealed class ProductManual
 			throw new ArgumentOutOfRangeException(nameof(warrantyDurationMonths), "Warranty duration must be between 1 and 1200 months.");
 	}
 
+	internal void SetLocaleForConfirmation(string locale)
+	{
+		if (LifecycleStatus != ProductManualLifecycleStatus.ReviewRequired)
+		{
+			throw new InvalidOperationException(
+				"Only a manual requiring review can change locale.");
+		}
+		if (string.IsNullOrWhiteSpace(locale))
+			throw new ArgumentException("A locale is required.", nameof(locale));
+		if (locale.Length > 20)
+			throw new ArgumentOutOfRangeException(
+				nameof(locale),
+				"The locale must not exceed 20 characters.");
+
+		Locale = locale;
+	}
+
 	internal void Activate(
 		string versionLabel,
 		int? warrantyDurationMonths)

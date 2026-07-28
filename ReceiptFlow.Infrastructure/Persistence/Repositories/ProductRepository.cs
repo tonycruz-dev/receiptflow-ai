@@ -38,6 +38,10 @@ internal sealed class ProductRepository(ApplicationDbContext dbContext)
 		return query
 			.Include(product => product.Manuals)
 				.ThenInclude(manual => manual.Document)
+			.Include(product => product.Manuals)
+				.ThenInclude(manual => manual.Extraction)
+			.Include(product => product.Manuals)
+				.ThenInclude(manual => manual.Sections)
 			.SingleOrDefaultAsync(
 				product => product.Id == id && product.OwnerUserId == ownerUserId,
 				cancellationToken);

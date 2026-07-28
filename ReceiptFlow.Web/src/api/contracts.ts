@@ -4,6 +4,72 @@ export interface CurrentUser {
   email: string | null;
 }
 
+export interface ProductResponse {
+  productId: string;
+  manufacturer: string;
+  name: string;
+  modelNumber: string | null;
+  createdAtUtc: string;
+  updatedAtUtc: string | null;
+}
+
+export interface CreateProductRequest {
+  manufacturer: string;
+  name: string;
+  modelNumber: string | null;
+}
+
+export interface ProductManualResponse {
+  productManualId: string;
+  productId: string;
+  manufacturer: string;
+  productName: string;
+  modelNumber: string | null;
+  documentId: string;
+  originalFileName: string;
+  contentType: string;
+  fileSize: number;
+  documentProcessingStatus: string;
+  manualLifecycleStatus: string;
+  manualKind: string;
+  locale: string;
+  versionLabel: string | null;
+  warrantyDurationMonths: number | null;
+  supersedesProductManualId: string | null;
+  uploadedAtUtc: string;
+  confirmedAtUtc: string | null;
+  supersededAtUtc: string | null;
+  extraction: ManualExtractionResponse | null;
+  sections: ManualSectionResponse[];
+}
+
+export interface ManualExtractionResponse {
+  suggestedManufacturer: string | null;
+  suggestedProductName: string | null;
+  suggestedModelNumber: string | null;
+  suggestedVersionLabel: string | null;
+  suggestedWarrantyDurationMonths: number | null;
+  overallConfidence: number | null;
+  extractedAtUtc: string;
+}
+
+export interface ManualSectionResponse {
+  ordinal: number;
+  headingPath: string;
+  pageStart: number | null;
+  pageEnd: number | null;
+  content: string;
+}
+
+export interface ConfirmProductManualRequest {
+  manufacturer: string;
+  productName: string;
+  modelNumber: string | null;
+  versionLabel: string;
+  locale: string;
+  warrantyDurationMonths: number | null;
+}
+
 export interface DashboardResponse {
   totalReceipts: number;
   spendingByCurrency: CurrencyAmount[];

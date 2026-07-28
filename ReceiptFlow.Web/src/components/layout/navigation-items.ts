@@ -2,6 +2,7 @@ import {
   Bot,
   LayoutDashboard,
   ReceiptText,
+  Package,
   Search,
   Upload,
   UserRound,
@@ -18,7 +19,8 @@ export interface NavigationItem {
 export const primaryNavigation: NavigationItem[] = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard, end: true },
   { label: 'Receipts', href: '/receipts', icon: ReceiptText },
-  { label: 'Upload', href: '/receipts/new', icon: Upload },
+  { label: 'Products', href: '/products', icon: Package },
+  { label: 'Upload', href: '/upload', icon: Upload },
   { label: 'Search', href: '/search', icon: Search },
   { label: 'Assistant', href: '/assistant', icon: Bot },
 ];
@@ -30,7 +32,10 @@ export const accountNavigation: NavigationItem[] = [
 export const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
   '/receipts': 'Receipts',
+  '/upload': 'Upload',
   '/receipts/new': 'Upload receipt',
+  '/products': 'Products',
+  '/products/manuals/new': 'Upload product manual',
   '/search': 'Receipt search',
   '/assistant': 'AI receipt assistant',
   '/profile': 'Profile',

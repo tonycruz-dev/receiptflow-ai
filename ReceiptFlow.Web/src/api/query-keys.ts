@@ -20,4 +20,11 @@ export const queryKeys = {
       request.pageSize,
     ] as const,
   receiptSearches: ['receipts', 'search'] as const,
+  productLists: ['products', 'list'] as const,
+  products: ['products', 'list'] as const,
+  product: (productId: string) => ['products', 'detail', productId] as const,
+  productManuals: (productId: string) =>
+    ['products', 'manuals', productId] as const,
+  productManual: (productId: string, productManualId: string) =>
+    ['products', 'manuals', productId, productManualId] as const,
 };

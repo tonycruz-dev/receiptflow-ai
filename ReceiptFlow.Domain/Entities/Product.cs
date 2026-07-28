@@ -52,6 +52,21 @@ public sealed class Product
 
 	public IReadOnlyCollection<Purchase> Purchases => _purchases;
 
+	public void UpdateDetails(
+		string manufacturer,
+		string name,
+		string? modelNumber)
+	{
+		Manufacturer = Required(manufacturer, nameof(manufacturer), 200);
+		Name = Required(name, nameof(name), 200);
+		ModelNumber = Optional(modelNumber, nameof(modelNumber), 100);
+		NormalizedManufacturer = Normalize(Manufacturer);
+		NormalizedModelNumber = ModelNumber is null
+			? null
+			: Normalize(ModelNumber);
+		UpdatedAtUtc = DateTimeOffset.UtcNow;
+	}
+
 	public ProductManual AddManualVersion(
 		Document document,
 		ProductManual? supersedes = null,
@@ -94,10 +109,14 @@ public sealed class Product
 	public void ActivateManualVersion(
 		Guid productManualId,
 		string versionLabel,
-		int? warrantyDurationMonths = null)
+		int? warrantyDurationMonths = null,
+		string? locale = null)
 	{
 		var manual = _manuals.SingleOrDefault(candidate => candidate.Id == productManualId)
 			?? throw new InvalidOperationException("The manual version does not belong to this product.");
+
+		if (locale is not null)
+			manual.SetLocaleForConfirmation(NormalizeLocale(locale));
 
 		manual.ValidateActivation(versionLabel, warrantyDurationMonths);
 

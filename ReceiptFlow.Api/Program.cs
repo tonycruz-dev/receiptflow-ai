@@ -100,6 +100,7 @@ builder.Services.AddScoped<ListProductsHandler>();
 builder.Services.AddScoped<UploadProductManualHandler>();
 builder.Services.AddScoped<ListProductManualsHandler>();
 builder.Services.AddScoped<GetProductManualHandler>();
+builder.Services.AddScoped<ConfirmProductManualHandler>();
 
 builder.Services.AddControllers();
 const string frontendCorsPolicy = "ReceiptFlowFrontend";

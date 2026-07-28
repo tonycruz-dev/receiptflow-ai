@@ -20,8 +20,21 @@ export const routes: RouteObject[] = [
       { index: true, lazy: () => import('@/pages/dashboard-page') },
       { path: 'receipts', lazy: () => import('@/pages/receipts-page') },
       {
+        path: 'upload',
+        lazy: () => import('@/pages/upload-page'),
+      },
+      {
         path: 'receipts/new',
         lazy: () => import('@/pages/upload-receipt-page'),
+      },
+      { path: 'products', lazy: () => import('@/pages/products-page') },
+      {
+        path: 'products/manuals/new',
+        lazy: () => import('@/pages/manual-upload-page'),
+      },
+      {
+        path: 'products/:productId',
+        lazy: () => import('@/pages/product-details-page'),
       },
       {
         path: 'receipts/:receiptId',

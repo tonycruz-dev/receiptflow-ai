@@ -4,11 +4,15 @@ import type {
   AskReceiptQuestionRequest,
   AskReceiptQuestionResponse,
   ConfirmReceiptRequest,
+  ConfirmProductManualRequest,
+  CreateProductRequest,
   CurrentUser,
   CreateReceiptRequest,
   DashboardResponse,
   ImportReceiptResponse,
   ProblemDetails,
+  ProductManualResponse,
+  ProductResponse,
   ReceiptSearchRequest,
   ReceiptSearchResponse,
   ReceiptListResponse,
@@ -75,6 +79,36 @@ export interface ReceiptFlowApiClient {
     request: AskReceiptQuestionRequest,
     signal?: AbortSignal,
   ): Promise<AskReceiptQuestionResponse>;
+  listProducts(signal?: AbortSignal): Promise<ProductResponse[]>;
+  createProduct(
+    request: CreateProductRequest,
+    signal?: AbortSignal,
+  ): Promise<ProductResponse>;
+  getProduct(productId: string, signal?: AbortSignal): Promise<ProductResponse>;
+  listProductManuals(
+    productId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductManualResponse[]>;
+  getProductManual(
+    productId: string,
+    productManualId: string,
+    signal?: AbortSignal,
+  ): Promise<ProductManualResponse>;
+  uploadProductManual(
+    productId: string,
+    file: File,
+    options?: {
+      supersedesProductManualId?: string;
+      locale?: string;
+    },
+    signal?: AbortSignal,
+  ): Promise<ProductManualResponse>;
+  confirmProductManual(
+    productId: string,
+    productManualId: string,
+    request: ConfirmProductManualRequest,
+    signal?: AbortSignal,
+  ): Promise<ProductManualResponse>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -252,6 +286,49 @@ export function createApiClient({
       request<AskReceiptQuestionResponse, AskReceiptQuestionRequest>(
         '/api/assistant/receipts/ask',
         { method: 'POST', body, signal },
+      ),
+    listProducts: (signal) =>
+      request<ProductResponse[]>('/api/products', { signal }),
+    createProduct: (body, signal) =>
+      request<ProductResponse, CreateProductRequest>('/api/products', {
+        method: 'POST',
+        body,
+        signal,
+      }),
+    getProduct: (productId, signal) =>
+      request<ProductResponse>(
+        `/api/products/${encodeURIComponent(productId)}`,
+        { signal },
+      ),
+    listProductManuals: (productId, signal) =>
+      request<ProductManualResponse[]>(
+        `/api/products/${encodeURIComponent(productId)}/manuals`,
+        { signal },
+      ),
+    getProductManual: (productId, productManualId, signal) =>
+      request<ProductManualResponse>(
+        `/api/products/${encodeURIComponent(productId)}/manuals/${encodeURIComponent(productManualId)}`,
+        { signal },
+      ),
+    uploadProductManual: (productId, file, options, signal) => {
+      const body = new FormData();
+      body.append('file', file);
+      if (options?.supersedesProductManualId) {
+        body.append(
+          'supersedesProductManualId',
+          options.supersedesProductManualId,
+        );
+      }
+      if (options?.locale) body.append('locale', options.locale);
+      return request<ProductManualResponse, FormData>(
+        `/api/products/${encodeURIComponent(productId)}/manuals`,
+        { method: 'POST', body, signal },
+      );
+    },
+    confirmProductManual: (productId, productManualId, body, signal) =>
+      request<ProductManualResponse, ConfirmProductManualRequest>(
+        `/api/products/${encodeURIComponent(productId)}/manuals/${encodeURIComponent(productManualId)}/confirmation`,
+        { method: 'PUT', body, signal },
       ),
   };
 }

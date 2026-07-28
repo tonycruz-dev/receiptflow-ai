@@ -18,7 +18,8 @@ public sealed class ProductsController(
 	ListProductsHandler listProductsHandler,
 	UploadProductManualHandler uploadProductManualHandler,
 	ListProductManualsHandler listProductManualsHandler,
-	GetProductManualHandler getProductManualHandler)
+	GetProductManualHandler getProductManualHandler,
+	ConfirmProductManualHandler confirmProductManualHandler)
 	: ControllerBase
 {
 	private const long MultipartOverheadAllowance = 64 * 1024;
@@ -158,6 +159,46 @@ public sealed class ProductsController(
 			productManualId,
 			cancellationToken);
 		return manual is null ? NotFound() : Ok(manual);
+	}
+
+	[HttpPut("{productId:guid}/manuals/{productManualId:guid}/confirmation")]
+	[ProducesResponseType<ProductManualResponse>(StatusCodes.Status200OK)]
+	[ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+	[ProducesResponseType(StatusCodes.Status404NotFound)]
+	[ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+	public async Task<IActionResult> ConfirmManual(
+		Guid productId,
+		Guid productManualId,
+		ConfirmProductManualRequest request,
+		CancellationToken cancellationToken)
+	{
+		var result = await confirmProductManualHandler.HandleAsync(
+			productId,
+			productManualId,
+			request,
+			cancellationToken);
+
+		return result.Status switch
+		{
+			ConfirmProductManualStatus.Success => Ok(result.Manual),
+			ConfirmProductManualStatus.NotFound => NotFound(),
+			ConfirmProductManualStatus.NotReady => Conflict(new ProblemDetails
+			{
+				Title = "The product manual is not ready for confirmation.",
+				Status = StatusCodes.Status409Conflict
+			}),
+			ConfirmProductManualStatus.Conflict => Conflict(new ProblemDetails
+			{
+				Title = "The product manual could not be activated.",
+				Status = StatusCodes.Status409Conflict
+			}),
+			_ => BadRequest(new ProblemDetails
+			{
+				Title = "The product manual confirmation is invalid.",
+				Detail = result.Error,
+				Status = StatusCodes.Status400BadRequest
+			})
+		};
 	}
 
 	private BadRequestObjectResult InvalidManual() =>

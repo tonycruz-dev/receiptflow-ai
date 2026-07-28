@@ -54,6 +54,23 @@ export function createMockApiClient(
       matches: [],
     }),
     askReceiptQuestion: vi.fn().mockResolvedValue({ answer: '', sources: [] }),
+    listProducts: vi.fn().mockResolvedValue([]),
+    createProduct: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    getProduct: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    listProductManuals: vi.fn().mockResolvedValue([]),
+    getProductManual: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    uploadProductManual: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    confirmProductManual: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
     ...overrides,
   };
 }
