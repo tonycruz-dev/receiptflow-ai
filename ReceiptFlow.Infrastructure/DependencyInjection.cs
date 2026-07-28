@@ -44,6 +44,7 @@ public static class DependencyInjection
 		services.AddScoped<IReceiptRepository, ReceiptRepository>();
 		services.AddScoped<IReceiptDocumentReadStore, ReceiptDocumentReadStore>();
 		services.AddScoped<IProductRepository, ProductRepository>();
+		services.AddScoped<IPurchaseRepository, PurchaseRepository>();
 		services.AddScoped<
 			IReceiptDocumentEventPublisher,
 			MassTransitReceiptDocumentEventPublisher>();

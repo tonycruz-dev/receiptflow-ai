@@ -1,7 +1,12 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ReceiptDocumentDetail, ReceiptResponse } from '@/api/contracts';
+import type {
+  ProductManualResponse,
+  ProductResponse,
+  ReceiptDocumentDetail,
+  ReceiptResponse,
+} from '@/api/contracts';
 import { createMockApiClient, renderApp } from '@/test/render-app';
 
 const draftReceipt: ReceiptResponse = {
@@ -83,6 +88,39 @@ const confirmedReceipt: ReceiptResponse = {
       displayOrder: 1,
     },
   ],
+};
+
+const product: ProductResponse = {
+  productId: 'product-1',
+  manufacturer: 'Acme',
+  name: 'Toaster',
+  modelNumber: 'TX-100',
+  createdAtUtc: '2026-07-19T10:00:00Z',
+  updatedAtUtc: null,
+};
+
+const manual: ProductManualResponse = {
+  productManualId: 'manual-1',
+  productId: product.productId,
+  manufacturer: product.manufacturer,
+  productName: product.name,
+  modelNumber: product.modelNumber,
+  documentId: 'manual-document-1',
+  originalFileName: 'manual.pdf',
+  contentType: 'application/pdf',
+  fileSize: 1024,
+  documentProcessingStatus: 'Completed',
+  manualLifecycleStatus: 'Active',
+  manualKind: 'UserManual',
+  locale: 'en-gb',
+  versionLabel: '2.0',
+  warrantyDurationMonths: 24,
+  supersedesProductManualId: null,
+  uploadedAtUtc: '2026-07-19T10:00:00Z',
+  confirmedAtUtc: '2026-07-19T10:05:00Z',
+  supersededAtUtc: null,
+  extraction: null,
+  sections: [],
 };
 
 afterEach(() => {
@@ -281,6 +319,77 @@ describe('Receipt processing and review page', () => {
     expect(within(lineItems).getByText('Corrected milk')).toBeVisible();
     expect(within(lineItems).getByText('Quantity 2')).toBeVisible();
     expect(within(lineItems).getByText('£3.00')).toBeVisible();
+  });
+
+  it('links a confirmed receipt line item to an existing product and manual', async () => {
+    const user = userEvent.setup();
+    const linkPurchase = vi.fn().mockResolvedValue({
+      purchaseId: 'purchase-1',
+    });
+    const confirmedDocument: ReceiptDocumentDetail = {
+      ...completedDocument,
+      receiptLifecycleStatus: 'Confirmed',
+      confirmationRequired: false,
+    };
+    renderDetails({
+      getReceipt: vi.fn().mockResolvedValue(confirmedReceipt),
+      getReceiptDocument: vi.fn().mockResolvedValue(confirmedDocument),
+      listUnlinkedReceiptItems: vi.fn().mockResolvedValue([
+        {
+          receiptLineItemId: 'line-item-1',
+          description: 'Corrected milk',
+          quantity: 2,
+          unitPrice: 1.5,
+          totalPrice: 3,
+          tax: null,
+          displayOrder: 1,
+        },
+      ]),
+      listProducts: vi.fn().mockResolvedValue([product]),
+      listProductManuals: vi.fn().mockResolvedValue([manual]),
+      linkPurchase,
+    });
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Link to product' }),
+    );
+    await user.selectOptions(
+      screen.getByLabelText('Product'),
+      product.productId,
+    );
+    await user.selectOptions(
+      await screen.findByLabelText('Manual version'),
+      manual.productManualId,
+    );
+    await user.click(screen.getByRole('button', { name: 'Link purchase' }));
+
+    await waitFor(() => {
+      expect(linkPurchase).toHaveBeenCalledWith({
+        receiptId: 'receipt-1',
+        receiptLineItemId: 'line-item-1',
+        productId: product.productId,
+        newProduct: null,
+        productManualId: manual.productManualId,
+      });
+    });
+  });
+
+  it('marks already linked receipt line items without offering duplicate actions', async () => {
+    const confirmedDocument: ReceiptDocumentDetail = {
+      ...completedDocument,
+      receiptLifecycleStatus: 'Confirmed',
+      confirmationRequired: false,
+    };
+    renderDetails({
+      getReceipt: vi.fn().mockResolvedValue(confirmedReceipt),
+      getReceiptDocument: vi.fn().mockResolvedValue(confirmedDocument),
+      listUnlinkedReceiptItems: vi.fn().mockResolvedValue([]),
+    });
+
+    expect(await screen.findByText('Linked')).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Link to product' }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows the redesigned empty-document state', async () => {

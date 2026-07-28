@@ -28,4 +28,7 @@ export const queryKeys = {
     ['products', 'manuals', productId] as const,
   productManual: (productId: string, productManualId: string) =>
     ['products', 'manuals', productId, productManualId] as const,
+  purchases: ['purchases', 'list'] as const,
+  unlinkedReceiptItems: (receiptId: string) =>
+    ['receipts', receiptId, 'unlinked-items'] as const,
 };

@@ -18,6 +18,7 @@ using ReceiptFlow.Application.Products.CreateProduct;
 using ReceiptFlow.Application.Products.GetProduct;
 using ReceiptFlow.Application.Products.ListProducts;
 using ReceiptFlow.Application.Products.Manuals;
+using ReceiptFlow.Application.Purchases;
 using ReceiptFlow.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -102,6 +103,11 @@ builder.Services.AddScoped<UploadProductManualHandler>();
 builder.Services.AddScoped<ListProductManualsHandler>();
 builder.Services.AddScoped<GetProductManualHandler>();
 builder.Services.AddScoped<ConfirmProductManualHandler>();
+builder.Services.AddScoped<ListUnlinkedReceiptItemsHandler>();
+builder.Services.AddScoped<ListPurchasesHandler>();
+builder.Services.AddScoped<LinkPurchaseHandler>();
+builder.Services.AddScoped<UnlinkPurchaseHandler>();
+builder.Services.AddScoped<ChangePurchaseManualHandler>();
 
 builder.Services.AddControllers()
 	.AddJsonOptions(options =>

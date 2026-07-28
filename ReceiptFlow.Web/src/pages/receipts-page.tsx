@@ -118,7 +118,11 @@ export function Component() {
   );
 }
 
-function ReceiptLibraryHeader({ totalReceipts }: { totalReceipts?: number | undefined }) {
+function ReceiptLibraryHeader({
+  totalReceipts,
+}: {
+  totalReceipts?: number | undefined;
+}) {
   return (
     <section className="relative isolate overflow-hidden rounded-3xl border border-primary/15 bg-gradient-to-br from-primary/[0.12] via-card to-accent/40 px-6 py-8 shadow-sm sm:px-8 sm:py-10">
       <div

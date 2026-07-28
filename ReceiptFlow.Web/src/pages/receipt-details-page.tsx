@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   CalendarDays,
@@ -7,8 +7,10 @@ import {
   Clock3,
   FileText,
   LoaderCircle,
+  Package,
   ReceiptText,
   ScanLine,
+  ShieldCheck,
   Store,
   Tag,
   Upload,
@@ -17,7 +19,13 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import type { ReceiptDocumentDetail, ReceiptResponse } from '@/api/contracts';
+import type {
+  ProductManualResponse,
+  ProductResponse,
+  ReceiptDocumentDetail,
+  ReceiptLineItem,
+  ReceiptResponse,
+} from '@/api/contracts';
 import { getSafeErrorMessage } from '@/api/error-message';
 import { queryKeys } from '@/api/query-keys';
 import {
@@ -61,6 +69,7 @@ export function Component() {
     documentsQuery.data?.[0]?.documentId;
   const documentQuery = useReceiptDocument(receiptId, documentId);
   const [manualEntry, setManualEntry] = useState(false);
+  const [linkingItem, setLinkingItem] = useState<ReceiptLineItem | null>(null);
 
   if (
     receiptQuery.isPending ||
@@ -209,7 +218,15 @@ export function Component() {
               />
             ) : null}
             {receipt.lifecycleStatus === 'Confirmed' ? (
-              <ConfirmedDetails receipt={receipt} document={document} />
+              <ConfirmedDetails
+                receipt={receipt}
+                document={document}
+                linkingItem={linkingItem}
+                onLinkItem={setLinkingItem}
+                onCancelLink={() => {
+                  setLinkingItem(null);
+                }}
+              />
             ) : null}
           </CardContent>
         </Card>
@@ -491,10 +508,28 @@ function ReplacementDocumentUpload({
 function ConfirmedDetails({
   receipt,
   document,
+  linkingItem,
+  onLinkItem,
+  onCancelLink,
 }: {
   receipt: ReceiptResponse;
   document: ReceiptDocumentDetail;
+  linkingItem: ReceiptLineItem | null;
+  onLinkItem: (item: ReceiptLineItem) => void;
+  onCancelLink: () => void;
 }) {
+  const { apiClient } = useAuth();
+  const unlinkedItems = useQuery({
+    queryKey: queryKeys.unlinkedReceiptItems(receipt.id),
+    queryFn: ({ signal }) =>
+      apiClient.listUnlinkedReceiptItems(receipt.id, signal),
+    enabled:
+      receipt.lifecycleStatus === 'Confirmed' && receipt.lineItems.length > 0,
+  });
+  const unlinkedItemIds = new Set(
+    (unlinkedItems.data ?? []).map((item) => item.receiptLineItemId),
+  );
+
   return (
     <section aria-labelledby="confirmed-heading" className="space-y-8">
       <div>
@@ -579,13 +614,280 @@ function ConfirmedDetails({
                     ? formatCurrency(item.totalPrice, receipt.currency)
                     : item.totalPrice}
                 </span>
+                {unlinkedItems.isLoading ? (
+                  <Button type="button" variant="outline" size="sm" disabled>
+                    Checking link status…
+                  </Button>
+                ) : unlinkedItems.isSuccess && !unlinkedItemIds.has(item.id) ? (
+                  <span className="rounded-full border bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
+                    Linked
+                  </span>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      onLinkItem(item);
+                    }}
+                  >
+                    <Package aria-hidden="true" />
+                    Link to product
+                  </Button>
+                )}
               </li>
             ))}
           </ol>
         </section>
       ) : null}
+      {linkingItem ? (
+        <LinkPurchasePanel
+          receiptId={receipt.id}
+          lineItem={linkingItem}
+          onCancel={onCancelLink}
+          onLinked={onCancelLink}
+        />
+      ) : null}
     </section>
   );
+}
+
+function LinkPurchasePanel({
+  receiptId,
+  lineItem,
+  onCancel,
+  onLinked,
+}: {
+  receiptId: string;
+  lineItem: ReceiptLineItem;
+  onCancel: () => void;
+  onLinked: () => void;
+}) {
+  const { apiClient } = useAuth();
+  const queryClient = useQueryClient();
+  const products = useQuery({
+    queryKey: queryKeys.products,
+    queryFn: ({ signal }) => apiClient.listProducts(signal),
+  });
+  const [mode, setMode] = useState<'existing' | 'new'>('existing');
+  const [productId, setProductId] = useState('');
+  const [manufacturer, setManufacturer] = useState('');
+  const [name, setName] = useState(lineItem.description);
+  const [modelNumber, setModelNumber] = useState('');
+  const selectedProductId = mode === 'existing' ? productId : '';
+  const manuals = useQuery({
+    queryKey: selectedProductId
+      ? queryKeys.productManuals(selectedProductId)
+      : ['manuals-disabled'],
+    queryFn: ({ signal }) =>
+      apiClient.listProductManuals(selectedProductId, signal),
+    enabled: Boolean(selectedProductId),
+  });
+  const [manualId, setManualId] = useState('');
+  const link = useMutation({
+    mutationFn: () =>
+      apiClient.linkPurchase({
+        receiptId,
+        receiptLineItemId: lineItem.id,
+        productId: mode === 'existing' ? productId : null,
+        newProduct:
+          mode === 'new'
+            ? {
+                manufacturer,
+                name,
+                modelNumber: modelNumber.trim() || null,
+              }
+            : null,
+        productManualId: manualId || null,
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.purchases }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.unlinkedReceiptItems(receiptId),
+        }),
+      ]);
+      onLinked();
+    },
+  });
+  const usableManuals = (manuals.data ?? []).filter(isConfirmedManual);
+
+  return (
+    <section
+      className="rounded-2xl border bg-muted/20 p-5"
+      aria-labelledby="link-purchase-heading"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-background text-primary shadow-sm ring-1 ring-border">
+          <ShieldCheck className="size-5" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h4 id="link-purchase-heading" className="font-semibold">
+            Link “{lineItem.description}”
+          </h4>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Select a product and optional manual version. Warranty expiry is
+            calculated from this receipt date and the selected manual duration.
+          </p>
+          {link.isError ? (
+            <p className="mt-3 text-sm text-destructive" role="alert">
+              {getSafeErrorMessage(link.error)}
+            </p>
+          ) : null}
+          <form
+            className="mt-5 grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              link.mutate();
+            }}
+          >
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={mode === 'existing' ? 'default' : 'outline'}
+                onClick={() => {
+                  setMode('existing');
+                }}
+              >
+                Existing product
+              </Button>
+              <Button
+                type="button"
+                variant={mode === 'new' ? 'default' : 'outline'}
+                onClick={() => {
+                  setMode('new');
+                  setProductId('');
+                  setManualId('');
+                }}
+              >
+                New product
+              </Button>
+            </div>
+            {mode === 'existing' ? (
+              <label className="grid gap-1.5 text-sm font-medium">
+                Product
+                <select
+                  className="h-11 rounded-lg border bg-background px-3"
+                  value={productId}
+                  required
+                  onChange={(event) => {
+                    setProductId(event.target.value);
+                    setManualId('');
+                  }}
+                >
+                  <option value="">Select product</option>
+                  {(products.data ?? []).map((product: ProductResponse) => (
+                    <option key={product.productId} value={product.productId}>
+                      {product.manufacturer} {product.name}
+                      {product.modelNumber ? ` · ${product.modelNumber}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-3">
+                <TextInput
+                  label="Manufacturer"
+                  value={manufacturer}
+                  onChange={setManufacturer}
+                  required
+                />
+                <TextInput
+                  label="Product name"
+                  value={name}
+                  onChange={setName}
+                  required
+                />
+                <TextInput
+                  label="Model"
+                  value={modelNumber}
+                  onChange={setModelNumber}
+                />
+              </div>
+            )}
+            {mode === 'existing' && selectedProductId ? (
+              <label className="grid gap-1.5 text-sm font-medium">
+                Manual version
+                <select
+                  className="h-11 rounded-lg border bg-background px-3"
+                  value={manualId}
+                  onChange={(event) => {
+                    setManualId(event.target.value);
+                  }}
+                >
+                  <option value="">No warranty manual</option>
+                  {usableManuals.map((manual) => (
+                    <option
+                      key={manual.productManualId}
+                      value={manual.productManualId}
+                    >
+                      {manual.versionLabel ?? 'Version'} ·{' '}
+                      {manual.warrantyDurationMonths
+                        ? `${manual.warrantyDurationMonths.toString()} months`
+                        : 'unknown warranty'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="submit"
+                disabled={
+                  link.isPending ||
+                  (mode === 'existing' && !productId) ||
+                  (mode === 'new' && (!manufacturer.trim() || !name.trim()))
+                }
+              >
+                {link.isPending ? (
+                  <LoaderCircle
+                    className="animate-spin motion-reduce:animate-none"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <ShieldCheck aria-hidden="true" />
+                )}
+                Link purchase
+              </Button>
+              <Button type="button" variant="ghost" onClick={onCancel}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TextInput({
+  label,
+  value,
+  required = false,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  required?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="grid gap-1.5 text-sm font-medium">
+      {label}
+      <input
+        className="h-11 rounded-lg border bg-background px-3"
+        value={value}
+        required={required}
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+      />
+    </label>
+  );
+}
+
+function isConfirmedManual(manual: ProductManualResponse) {
+  return ['Active', 'Superseded'].includes(manual.manualLifecycleStatus);
 }
 
 function AmountCard({

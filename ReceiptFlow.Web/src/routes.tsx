@@ -28,6 +28,7 @@ export const routes: RouteObject[] = [
         lazy: () => import('@/pages/upload-receipt-page'),
       },
       { path: 'products', lazy: () => import('@/pages/products-page') },
+      { path: 'purchases', lazy: () => import('@/pages/purchases-page') },
       {
         path: 'products/manuals/new',
         lazy: () => import('@/pages/manual-upload-page'),

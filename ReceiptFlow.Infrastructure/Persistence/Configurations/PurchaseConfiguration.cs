@@ -46,11 +46,30 @@ internal sealed class PurchaseConfiguration
 			.HasPrecision(18, 4)
 			.IsRequired();
 
+		builder.Property(purchase => purchase.PurchaseDate)
+			.HasColumnName("purchase_date")
+			.HasColumnType("timestamp with time zone")
+			.IsRequired();
+
+		builder.Property(purchase => purchase.Amount)
+			.HasColumnName("amount")
+			.HasPrecision(18, 2)
+			.IsRequired();
+
+		builder.Property(purchase => purchase.Currency)
+			.HasColumnName("currency")
+			.HasMaxLength(3)
+			.IsRequired();
+
 		builder.Property(purchase => purchase.WarrantySourceProductManualId)
 			.HasColumnName("warranty_source_product_manual_id");
 
 		builder.Property(purchase => purchase.WarrantyDurationMonthsSnapshot)
 			.HasColumnName("warranty_duration_months_snapshot");
+
+		builder.Property(purchase => purchase.WarrantyExpiresOn)
+			.HasColumnName("warranty_expires_on")
+			.HasColumnType("date");
 
 		builder.Property(purchase => purchase.CreatedAtUtc)
 			.HasColumnName("created_at_utc")
@@ -67,13 +86,12 @@ internal sealed class PurchaseConfiguration
 		builder.HasIndex(purchase => new
 		{
 			purchase.OwnerUserId,
-			purchase.ProductId,
 			purchase.ReceiptId,
 			purchase.ReceiptLineItemId
 		})
 			.IsUnique()
 			.HasFilter("receipt_line_item_id IS NOT NULL")
-			.HasDatabaseName("ux_purchases_product_receipt_line_item");
+			.HasDatabaseName("ux_purchases_receipt_line_item");
 
 		builder.HasIndex(purchase => new
 		{

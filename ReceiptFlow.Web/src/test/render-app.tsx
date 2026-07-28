@@ -71,6 +71,17 @@ export function createMockApiClient(
     confirmProductManual: vi
       .fn()
       .mockRejectedValue(new Error('Not implemented in test.')),
+    listUnlinkedReceiptItems: vi.fn().mockResolvedValue([]),
+    listPurchases: vi.fn().mockResolvedValue({ purchases: [] }),
+    linkPurchase: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    unlinkPurchase: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
+    changePurchaseManual: vi
+      .fn()
+      .mockRejectedValue(new Error('Not implemented in test.')),
     ...overrides,
   };
 }

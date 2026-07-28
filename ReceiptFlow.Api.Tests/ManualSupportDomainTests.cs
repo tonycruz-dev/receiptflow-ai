@@ -119,7 +119,7 @@ public sealed class ManualSupportDomainTests
 	}
 
 	[Fact]
-	public void WarrantyExpiry_UsesConfirmedReceiptDateAndPinnedManualDuration()
+	public void WarrantyExpiry_UsesConfirmedReceiptDateBoundaryAndPinnedManualDuration()
 	{
 		var purchaseDate = new DateTimeOffset(2024, 1, 31, 10, 30, 0, TimeSpan.Zero);
 		var receipt = new Receipt(
@@ -140,7 +140,7 @@ public sealed class ManualSupportDomainTests
 		Assert.Equal(original.Id, purchase.WarrantySourceProductManualId);
 		Assert.Equal(1, purchase.WarrantyDurationMonthsSnapshot);
 		Assert.Equal(
-			new DateTimeOffset(2024, 2, 29, 10, 30, 0, TimeSpan.Zero),
+			new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero),
 			purchase.CalculateWarrantyExpiry());
 	}
 

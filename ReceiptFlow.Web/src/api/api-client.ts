@@ -13,6 +13,8 @@ import type {
   ProblemDetails,
   ProductManualResponse,
   ProductResponse,
+  PurchaseListResponse,
+  PurchaseResponse,
   ReceiptSearchRequest,
   ReceiptSearchResponse,
   ReceiptListResponse,
@@ -20,6 +22,9 @@ import type {
   ReceiptDocumentSummary,
   ReceiptResponse,
   UploadReceiptDocumentResponse,
+  UnlinkedReceiptLineItemResponse,
+  LinkPurchaseRequest,
+  ChangePurchaseManualRequest,
 } from '@/api/contracts';
 
 interface AuthenticatedApiClientOptions {
@@ -30,7 +35,7 @@ interface AuthenticatedApiClientOptions {
 }
 
 export interface RequestOptions<TBody = never> {
-  method?: 'GET' | 'POST' | 'PUT';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
   body?: TBody;
   signal?: AbortSignal | undefined;
 }
@@ -109,6 +114,21 @@ export interface ReceiptFlowApiClient {
     request: ConfirmProductManualRequest,
     signal?: AbortSignal,
   ): Promise<ProductManualResponse>;
+  listUnlinkedReceiptItems(
+    receiptId: string,
+    signal?: AbortSignal,
+  ): Promise<UnlinkedReceiptLineItemResponse[]>;
+  listPurchases(signal?: AbortSignal): Promise<PurchaseListResponse>;
+  linkPurchase(
+    request: LinkPurchaseRequest,
+    signal?: AbortSignal,
+  ): Promise<PurchaseResponse>;
+  unlinkPurchase(purchaseId: string, signal?: AbortSignal): Promise<void>;
+  changePurchaseManual(
+    purchaseId: string,
+    request: ChangePurchaseManualRequest,
+    signal?: AbortSignal,
+  ): Promise<PurchaseResponse>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -328,6 +348,29 @@ export function createApiClient({
     confirmProductManual: (productId, productManualId, body, signal) =>
       request<ProductManualResponse, ConfirmProductManualRequest>(
         `/api/products/${encodeURIComponent(productId)}/manuals/${encodeURIComponent(productManualId)}/confirmation`,
+        { method: 'PUT', body, signal },
+      ),
+    listUnlinkedReceiptItems: (receiptId, signal) =>
+      request<UnlinkedReceiptLineItemResponse[]>(
+        `/api/receipts/${encodeURIComponent(receiptId)}/unlinked-items`,
+        { signal },
+      ),
+    listPurchases: (signal) =>
+      request<PurchaseListResponse>('/api/purchases', { signal }),
+    linkPurchase: (body, signal) =>
+      request<PurchaseResponse, LinkPurchaseRequest>('/api/purchases', {
+        method: 'POST',
+        body,
+        signal,
+      }),
+    unlinkPurchase: (purchaseId, signal) =>
+      request<undefined>(`/api/purchases/${encodeURIComponent(purchaseId)}`, {
+        method: 'DELETE',
+        signal,
+      }),
+    changePurchaseManual: (purchaseId, body, signal) =>
+      request<PurchaseResponse, ChangePurchaseManualRequest>(
+        `/api/purchases/${encodeURIComponent(purchaseId)}/manual`,
         { method: 'PUT', body, signal },
       ),
   };

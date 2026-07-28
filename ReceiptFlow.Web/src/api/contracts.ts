@@ -70,6 +70,53 @@ export interface ConfirmProductManualRequest {
   warrantyDurationMonths: number | null;
 }
 
+export interface UnlinkedReceiptLineItemResponse {
+  receiptLineItemId: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  tax: number | null;
+  displayOrder: number;
+}
+
+export interface LinkPurchaseRequest {
+  receiptId: string;
+  receiptLineItemId: string;
+  productId: string | null;
+  newProduct: CreateProductRequest | null;
+  productManualId: string | null;
+}
+
+export interface ChangePurchaseManualRequest {
+  productManualId: string | null;
+}
+
+export interface PurchaseResponse {
+  purchaseId: string;
+  productId: string;
+  productManufacturer: string;
+  productName: string;
+  modelNumber: string | null;
+  receiptId: string;
+  receiptLineItemId: string | null;
+  receiptLineItemDescription: string | null;
+  purchaseDate: string;
+  amount: number;
+  currency: string;
+  warrantySourceProductManualId: string | null;
+  manualVersionLabel: string | null;
+  warrantyDurationMonthsSnapshot: number | null;
+  warrantyExpiresOn: string | null;
+  warrantyStatus: 'Active' | 'ExpiringSoon' | 'Expired' | 'Unknown';
+  createdAtUtc: string;
+  updatedAtUtc: string | null;
+}
+
+export interface PurchaseListResponse {
+  purchases: PurchaseResponse[];
+}
+
 export interface DashboardResponse {
   totalReceipts: number;
   spendingByCurrency: CurrencyAmount[];

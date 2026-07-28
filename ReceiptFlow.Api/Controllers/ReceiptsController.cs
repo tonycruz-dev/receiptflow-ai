@@ -6,6 +6,7 @@ using ReceiptFlow.Application.Receipts.Documents;
 using ReceiptFlow.Application.Receipts.GetReceipt;
 using ReceiptFlow.Application.Receipts.ListReceipts;
 using ReceiptFlow.Application.Receipts.UploadDocument;
+using ReceiptFlow.Application.Purchases;
 
 namespace ReceiptFlow.Api.Controllers;
 
@@ -20,7 +21,8 @@ public sealed class ReceiptsController(
 	UploadReceiptDocumentHandler uploadReceiptDocumentHandler,
 	ListReceiptDocumentsHandler listReceiptDocumentsHandler,
 	GetReceiptDocumentHandler getReceiptDocumentHandler,
-	ReindexReceiptDocumentHandler reindexReceiptDocumentHandler)
+	ReindexReceiptDocumentHandler reindexReceiptDocumentHandler,
+	ListUnlinkedReceiptItemsHandler listUnlinkedReceiptItemsHandler)
 	: ControllerBase
 {
 	private const long MaximumReceiptFileSize = 10 * 1024 * 1024;
@@ -248,6 +250,19 @@ public sealed class ReceiptsController(
 				Status = StatusCodes.Status409Conflict
 			})
 		};
+	}
+
+	[HttpGet("{receiptId:guid}/unlinked-items")]
+	[ProducesResponseType<IReadOnlyList<UnlinkedReceiptLineItemResponse>>(StatusCodes.Status200OK)]
+	[ProducesResponseType(StatusCodes.Status404NotFound)]
+	public async Task<IActionResult> ListUnlinkedItems(
+		Guid receiptId,
+		CancellationToken cancellationToken)
+	{
+		var items = await listUnlinkedReceiptItemsHandler.HandleAsync(
+			receiptId,
+			cancellationToken);
+		return items is null ? NotFound() : Ok(items);
 	}
 
 	private BadRequestObjectResult InvalidFile()
