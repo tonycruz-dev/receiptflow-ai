@@ -65,8 +65,12 @@ public sealed class ManualSupportPersistenceTests
 		using var context = new ApplicationDbContext(options);
 
 		var manualType = context.Model.FindEntityType(typeof(ProductManual));
+		var extractionType = context.Model.FindEntityType(typeof(ManualExtraction));
+		var sectionType = context.Model.FindEntityType(typeof(ManualSection));
 		var purchaseType = context.Model.FindEntityType(typeof(Purchase));
 		Assert.NotNull(manualType);
+		Assert.NotNull(extractionType);
+		Assert.NotNull(sectionType);
 		Assert.NotNull(purchaseType);
 
 		Assert.Contains(
@@ -84,6 +88,15 @@ public sealed class ManualSupportPersistenceTests
 		Assert.Contains(
 			purchaseType.GetForeignKeys(),
 			foreignKey => PropertyNames(foreignKey.Properties) is "WarrantySourceProductManualId,ProductId,OwnerUserId");
+		Assert.Contains(
+			extractionType.GetForeignKeys(),
+			foreignKey => PropertyNames(foreignKey.Properties) is "DocumentId,OwnerUserId");
+		Assert.Contains(
+			extractionType.GetForeignKeys(),
+			foreignKey => PropertyNames(foreignKey.Properties) is "ProductManualId,ProductId,OwnerUserId");
+		Assert.Contains(
+			sectionType.GetForeignKeys(),
+			foreignKey => PropertyNames(foreignKey.Properties) is "ProductManualId,ProductId,OwnerUserId");
 	}
 
 	[Fact]

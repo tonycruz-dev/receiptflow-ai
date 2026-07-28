@@ -43,9 +43,13 @@ public static class DependencyInjection
 
 		services.AddScoped<IReceiptRepository, ReceiptRepository>();
 		services.AddScoped<IReceiptDocumentReadStore, ReceiptDocumentReadStore>();
+		services.AddScoped<IProductRepository, ProductRepository>();
 		services.AddScoped<
 			IReceiptDocumentEventPublisher,
 			MassTransitReceiptDocumentEventPublisher>();
+		services.AddScoped<
+			IProductManualEventPublisher,
+			MassTransitProductManualEventPublisher>();
 
 		services
 			.AddOptions<DocumentStorageOptions>()
@@ -237,6 +241,55 @@ public static class DependencyInjection
 			Application.Abstractions.Extraction.IDocumentExtractor,
 			NvidiaDocumentExtractor>();
 
+		services
+			.AddOptions<ManualExtractionOptions>()
+			.Bind(configuration.GetSection(ManualExtractionOptions.SectionName))
+			.Validate(
+				options =>
+					options.MaximumFileBytes > 0 &&
+					options.MaximumPages > 0 &&
+					options.MaximumExtractedCharacters > 0 &&
+					options.MaximumSections > 0 &&
+					options.MaximumSectionCharacters > 0 &&
+					options.MaximumRenderedImageBytes > 0 &&
+					options.ProcessingTimeoutSeconds > 0,
+				"ManualExtraction limits must all be greater than zero.")
+			.ValidateOnStart();
+
+		services.AddHttpClient("NvidiaManualDocumentExtractor")
+			.ConfigureHttpClient(client =>
+				client.Timeout = Timeout.InfiniteTimeSpan)
+			.ConfigureAdditionalHttpMessageHandlers((handlers, _) =>
+			{
+				for (var index = handlers.Count - 1; index >= 0; index--)
+				{
+					if (handlers[index] is ResilienceHandler)
+						handlers.RemoveAt(index);
+				}
+			})
+			.AddStandardResilienceHandler(options =>
+			{
+				options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(90);
+				options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
+				options.Retry.MaxRetryAttempts = 2;
+				options.Retry.Delay = TimeSpan.FromSeconds(2);
+				options.Retry.BackoffType = DelayBackoffType.Exponential;
+				options.Retry.UseJitter = false;
+				options.Retry.ShouldHandle =
+					new PredicateBuilder<HttpResponseMessage>()
+						.Handle<HttpRequestException>()
+						.Handle<TimeoutRejectedException>()
+						.HandleResult(response =>
+							response.StatusCode is HttpStatusCode.RequestTimeout ||
+							(int)response.StatusCode == 429 ||
+							(int)response.StatusCode >= 500);
+				options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(3);
+			});
+
+		services.AddScoped<
+			Application.Abstractions.Extraction.IManualDocumentExtractor,
+			NvidiaManualDocumentExtractor>();
+
 		return services;
 	}
 
@@ -363,8 +416,12 @@ public static class DependencyInjection
 					!string.IsNullOrWhiteSpace(
 						Environment.GetEnvironmentVariable("NVIDIA_API_KEY")),
 				"NvidiaChat:ApiKey is required.")
-			.Validate(options => options.MaximumOutputTokens is > 0 and <= 4096)
-			.Validate(options => options.Temperature is >= 0 and <= 1)
+			.Validate(
+				options => options.MaximumOutputTokens is > 0 and <= 4096,
+				"NvidiaChat:MaximumOutputTokens must be between 1 and 4096.")
+			.Validate(
+				options => options.Temperature is >= 0 and <= 1,
+				"NvidiaChat:Temperature must be between 0 and 1.")
 			.ValidateOnStart();
 
 		services.AddHttpClient("NvidiaReceiptAnswerGenerator")
@@ -379,10 +436,10 @@ public static class DependencyInjection
 			})
 			.AddStandardResilienceHandler(options =>
 			{
-				options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(90);
-				options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(3);
-				options.Retry.MaxRetryAttempts = 2;
-				options.Retry.Delay = TimeSpan.FromSeconds(2);
+				options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(45);
+				options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(100);
+				options.Retry.MaxRetryAttempts = 1;
+				options.Retry.Delay = TimeSpan.FromSeconds(1);
 				options.Retry.BackoffType = DelayBackoffType.Exponential;
 				options.Retry.ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
 					.Handle<HttpRequestException>()
@@ -391,7 +448,7 @@ public static class DependencyInjection
 						response.StatusCode is HttpStatusCode.RequestTimeout ||
 						(int)response.StatusCode == 429 ||
 						(int)response.StatusCode >= 500);
-				options.CircuitBreaker.SamplingDuration = TimeSpan.FromMinutes(3);
+				options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(90);
 			});
 
 		services.AddScoped<IReceiptAnswerGenerator, NvidiaReceiptAnswerGenerator>();
@@ -465,6 +522,9 @@ public static class DependencyInjection
 					cfg.Message<ReceiptDocumentExtractionCompletedV1>(message =>
 						message.SetEntityName(
 							"receipt-document-extraction-completed-v1"));
+					cfg.Message<ProductManualUploadedV1>(message =>
+						message.SetEntityName(
+							"product-manual-uploaded-v1"));
 					cfg.ConfigureEndpoints(context);
 				});
 			}

@@ -17,6 +17,7 @@ builder.Services.AddReceiptFlowMessaging(
 	{
 		messaging.AddConsumer<ReceiptDocumentUploadedConsumer>();
 		messaging.AddConsumer<ReceiptDocumentExtractionCompletedConsumer>();
+		messaging.AddConsumer<ProductManualUploadedConsumer>();
 	});
 
 var host = builder.Build();

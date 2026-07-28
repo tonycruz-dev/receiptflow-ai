@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Polly.Timeout;
 using ReceiptFlow.Application.Abstractions.Assistant;
 using ReceiptFlow.Application.Abstractions.Authentication;
 using ReceiptFlow.Application.Abstractions.Search;
@@ -410,6 +411,110 @@ public sealed class ReceiptAssistantTests
 		Assert.DoesNotContain("embedding", requestBody, StringComparison.OrdinalIgnoreCase);
 	}
 
+	[Fact]
+	public async Task NvidiaProviderTimeout_ReturnsTransientTimeoutException()
+	{
+		var httpHandler = new DelegatingTestHandler(_ =>
+			Task.FromException<HttpResponseMessage>(
+				new TimeoutRejectedException("provider timed out")));
+		using var provider = CreateAnswerProvider(httpHandler);
+		var generator = provider.GetRequiredService<IReceiptAnswerGenerator>();
+
+		var exception = await Assert.ThrowsAsync<ReceiptAnswerGenerationException>(() =>
+			generator.GenerateAsync(
+				"What did I buy?",
+				[new ReceiptAnswerEvidence(1, "receipt", "Merchant", null, 10, "GBP")]));
+
+		Assert.True(exception.IsTransient);
+		Assert.True(exception.IsTimeout);
+	}
+
+	[Fact]
+	public async Task NvidiaProviderCallerCancellation_IsNotWrappedOrRetried()
+	{
+		var calls = 0;
+		using var cancellation = new CancellationTokenSource();
+		await cancellation.CancelAsync();
+		var httpHandler = new CancellableTestHandler((_, token) =>
+		{
+			calls++;
+			return Task.FromCanceled<HttpResponseMessage>(token);
+		});
+		using var provider = CreateAnswerProvider(httpHandler);
+		var generator = provider.GetRequiredService<IReceiptAnswerGenerator>();
+
+		await Assert.ThrowsAsync<TaskCanceledException>(() =>
+			generator.GenerateAsync(
+				"What did I buy?",
+				[new ReceiptAnswerEvidence(1, "receipt", "Merchant", null, 10, "GBP")],
+				cancellation.Token));
+
+		Assert.Equal(0, calls);
+	}
+
+	[Fact]
+	public async Task NvidiaProviderRetryableFailure_IsRetriedOnceAndCanSucceed()
+	{
+		var calls = 0;
+		var httpHandler = new DelegatingTestHandler(_ =>
+		{
+			calls++;
+			if (calls == 1)
+			{
+				return Task.FromResult(new HttpResponseMessage(
+					HttpStatusCode.ServiceUnavailable));
+			}
+
+			return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+			{
+				Content = new StringContent(
+					"{\"choices\":[{\"message\":{\"content\":\"{\\\"answer\\\":\\\"Grounded [1]\\\",\\\"citationIds\\\":[1]}\"}}]}",
+					Encoding.UTF8,
+					"application/json")
+			});
+		});
+		using var provider = CreateAnswerProvider(httpHandler);
+		var generator = provider.GetRequiredService<IReceiptAnswerGenerator>();
+
+		var result = await generator.GenerateAsync(
+			"What did I buy?",
+			[new ReceiptAnswerEvidence(1, "receipt", "Merchant", null, 10, "GBP")]);
+
+		Assert.Equal(2, calls);
+		Assert.Equal("Grounded [1]", result.Answer);
+	}
+
+	[Fact]
+	public async Task NvidiaProviderNonRetryableResponse_IsNotRetried()
+	{
+		var calls = 0;
+		var httpHandler = new DelegatingTestHandler(_ =>
+		{
+			calls++;
+			return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+			{
+				Headers = { { "x-request-id", "request-123" } },
+				Content = new StringContent(
+					"{\"error\":\"bad request details\"}",
+					Encoding.UTF8,
+					"application/json")
+			});
+		});
+		using var provider = CreateAnswerProvider(httpHandler);
+		var generator = provider.GetRequiredService<IReceiptAnswerGenerator>();
+
+		var exception = await Assert.ThrowsAsync<ReceiptAnswerGenerationException>(() =>
+			generator.GenerateAsync(
+				"What did I buy?",
+				[new ReceiptAnswerEvidence(1, "receipt", "Merchant", null, 10, "GBP")]));
+
+		Assert.Equal(1, calls);
+		Assert.False(exception.IsTransient);
+		Assert.False(exception.IsTimeout);
+		Assert.Equal(400, exception.HttpStatusCode);
+		Assert.Equal("request-123", exception.ProviderRequestId);
+	}
+
 	private static AskReceiptQuestionHandler CreateHandler(
 		string user,
 		IReceiptAnswerGenerator generator,
@@ -440,9 +545,9 @@ public sealed class ReceiptAssistantTests
 		var services = new ServiceCollection();
 		services.AddLogging();
 		services.AddReceiptAnswerGeneration(configuration);
-		services.RemoveAll<IHttpClientFactory>();
-		services.AddSingleton<IHttpClientFactory>(
-			new TestHttpClientFactory(new HttpClient(httpHandler)));
+		services
+			.AddHttpClient("NvidiaReceiptAnswerGenerator")
+			.ConfigurePrimaryHttpMessageHandler(() => httpHandler);
 		return services.BuildServiceProvider();
 	}
 
@@ -562,5 +667,15 @@ public sealed class ReceiptAssistantTests
 		protected override Task<HttpResponseMessage> SendAsync(
 			HttpRequestMessage request,
 			CancellationToken cancellationToken) => handler(request);
+	}
+
+	private sealed class CancellableTestHandler(
+		Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)
+		: HttpMessageHandler
+	{
+		protected override Task<HttpResponseMessage> SendAsync(
+			HttpRequestMessage request,
+			CancellationToken cancellationToken) =>
+			handler(request, cancellationToken);
 	}
 }

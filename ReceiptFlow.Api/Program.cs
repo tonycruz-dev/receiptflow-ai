@@ -13,6 +13,10 @@ using ReceiptFlow.Application.Receipts.GetReceipt;
 using ReceiptFlow.Application.Receipts.ListReceipts;
 using ReceiptFlow.Application.Receipts.UploadDocument;
 using ReceiptFlow.Application.Search.Receipts;
+using ReceiptFlow.Application.Products.CreateProduct;
+using ReceiptFlow.Application.Products.GetProduct;
+using ReceiptFlow.Application.Products.ListProducts;
+using ReceiptFlow.Application.Products.Manuals;
 using ReceiptFlow.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -90,6 +94,12 @@ builder.Services.AddScoped<GetReceiptDocumentHandler>();
 builder.Services.AddScoped<ReindexReceiptDocumentHandler>();
 builder.Services.AddScoped<ReceiptSearchHandler>();
 builder.Services.AddScoped<AskReceiptQuestionHandler>();
+builder.Services.AddScoped<CreateProductHandler>();
+builder.Services.AddScoped<GetProductHandler>();
+builder.Services.AddScoped<ListProductsHandler>();
+builder.Services.AddScoped<UploadProductManualHandler>();
+builder.Services.AddScoped<ListProductManualsHandler>();
+builder.Services.AddScoped<GetProductManualHandler>();
 
 builder.Services.AddControllers();
 const string frontendCorsPolicy = "ReceiptFlowFrontend";

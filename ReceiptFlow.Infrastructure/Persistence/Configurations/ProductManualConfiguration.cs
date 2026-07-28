@@ -127,5 +127,8 @@ internal sealed class ProductManualConfiguration
 				manual.OwnerUserId
 			})
 			.OnDelete(DeleteBehavior.Restrict);
+
+		builder.Navigation(manual => manual.Sections)
+			.UsePropertyAccessMode(PropertyAccessMode.Field);
 	}
 }

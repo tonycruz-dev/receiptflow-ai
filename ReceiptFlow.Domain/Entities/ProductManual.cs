@@ -4,6 +4,8 @@ namespace ReceiptFlow.Domain.Entities;
 
 public sealed class ProductManual
 {
+	private readonly List<ManualSection> _sections = [];
+
 	private ProductManual()
 	{
 		// Required by EF Core.
@@ -73,6 +75,10 @@ public sealed class ProductManual
 
 	public ProductManual? SupersedesProductManual { get; private set; }
 
+	public ManualExtraction? Extraction { get; private set; }
+
+	public IReadOnlyCollection<ManualSection> Sections => _sections;
+
 	public void MarkReviewRequired()
 	{
 		if (LifecycleStatus != ProductManualLifecycleStatus.Processing)
@@ -87,6 +93,19 @@ public sealed class ProductManual
 			throw new InvalidOperationException("An active or superseded manual cannot be marked failed.");
 
 		LifecycleStatus = ProductManualLifecycleStatus.Failed;
+	}
+
+	public void MarkProcessingForRetry()
+	{
+		if (LifecycleStatus == ProductManualLifecycleStatus.Processing)
+			return;
+		if (LifecycleStatus != ProductManualLifecycleStatus.ReviewRequired)
+		{
+			throw new InvalidOperationException(
+				"Only a processing or review-required manual can be retried.");
+		}
+
+		LifecycleStatus = ProductManualLifecycleStatus.Processing;
 	}
 
 	internal void ValidateActivation(

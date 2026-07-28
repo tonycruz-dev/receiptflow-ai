@@ -1,8 +1,10 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ReceiptFlow.Application.Abstractions.Extraction;
 using ReceiptFlow.Application.Abstractions.Search;
 using ReceiptFlow.Infrastructure;
+using ReceiptFlow.Infrastructure.Assistant;
 
 namespace ReceiptFlow.Api.Tests;
 
@@ -50,6 +52,26 @@ public sealed class AiProviderSelectionTests
 		Assert.Contains("embedding provider", exception.Message);
 	}
 
+	[Fact]
+	public void NvidiaChatMaximumOutputTokens_ReportsExactConfigurationFailure()
+	{
+		var services = new ServiceCollection();
+		services.AddReceiptAnswerGeneration(CreateAnswerGenerationConfiguration(
+			maximumOutputTokens: "16384"));
+
+		using var provider = services.BuildServiceProvider();
+
+		var exception = Assert.Throws<OptionsValidationException>(() =>
+			provider
+				.GetRequiredService<IOptions<NvidiaChatOptions>>()
+				.Value);
+
+		var failure = Assert.Single(exception.Failures);
+		Assert.Equal(
+			"NvidiaChat:MaximumOutputTokens must be between 1 and 4096.",
+			failure);
+	}
+
 	private static IConfiguration CreateConfiguration(
 		string extractionProvider,
 		string embeddingProvider) =>
@@ -73,6 +95,21 @@ public sealed class AiProviderSelectionTests
 				["Typesense:CollectionName"] = "receipt_chunks_v1",
 				["Typesense:EmbeddingDimensions"] = "1024",
 				["Typesense:ApiKey"] = "test-key"
+			})
+			.Build();
+
+	private static IConfiguration CreateAnswerGenerationConfiguration(
+		string maximumOutputTokens) =>
+		new ConfigurationBuilder()
+			.AddInMemoryCollection(new Dictionary<string, string?>
+			{
+				["AI:AnswerProvider"] = "Nvidia",
+				["NvidiaChat:Endpoint"] =
+					"https://nvidia.test/v1/chat/completions",
+				["NvidiaChat:Model"] = "test-chat-model",
+				["NvidiaChat:ApiKey"] = "test-key",
+				["NvidiaChat:MaximumOutputTokens"] = maximumOutputTokens,
+				["NvidiaChat:Temperature"] = "0.1"
 			})
 			.Build();
 }

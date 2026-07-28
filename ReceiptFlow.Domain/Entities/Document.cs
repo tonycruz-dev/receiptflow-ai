@@ -100,6 +100,8 @@ public sealed class Document
 
 	public ProductManual? ProductManual { get; private set; }
 
+	public ManualExtraction? ManualExtraction { get; private set; }
+
 	public void MarkQueued()
 	{
 		EnsureStatus(DocumentProcessingStatus.Pending);
@@ -126,6 +128,22 @@ public sealed class Document
 		EnsureStatus(DocumentProcessingStatus.Processing);
 		ProcessingStatus = DocumentProcessingStatus.Pending;
 		ProcessingStartedAtUtc = null;
+	}
+
+	public void MarkQueuedForRetry()
+	{
+		if (ProcessingStatus is not (
+			DocumentProcessingStatus.Processing or
+			DocumentProcessingStatus.AwaitingReview))
+		{
+			throw new InvalidOperationException(
+				$"A document in status {ProcessingStatus} cannot be queued for retry.");
+		}
+
+		ProcessingStatus = DocumentProcessingStatus.Queued;
+		ProcessingStartedAtUtc = null;
+		PageCount = null;
+		ExtractedTextStorageKey = null;
 	}
 
 	public void MarkAwaitingReview(

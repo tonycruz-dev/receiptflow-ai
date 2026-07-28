@@ -23,6 +23,10 @@ public sealed class ApplicationDbContext(
 
 	public DbSet<ProductManual> ProductManuals => Set<ProductManual>();
 
+	public DbSet<ManualExtraction> ManualExtractions => Set<ManualExtraction>();
+
+	public DbSet<ManualSection> ManualSections => Set<ManualSection>();
+
 	public DbSet<Purchase> Purchases => Set<Purchase>();
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)

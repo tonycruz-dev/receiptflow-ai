@@ -18,6 +18,7 @@ public sealed class ReceiptAssistantController(
 	[ProducesResponseType<AskReceiptQuestionResponse>(StatusCodes.Status200OK)]
 	[ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
 	[ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
+	[ProducesResponseType<ProblemDetails>(StatusCodes.Status504GatewayTimeout)]
 	public async Task<IActionResult> Ask(
 		AskReceiptQuestionRequest request,
 		CancellationToken cancellationToken)
@@ -49,11 +50,13 @@ public sealed class ReceiptAssistantController(
 		{
 			logger.LogError(
 				exception,
-				"Receipt answer generation failed. HTTP status {HttpStatus}, provider request {ProviderRequestId}, transient {IsTransient}.",
+				"Receipt answer generation failed. Component {Component}, HTTP status {HttpStatus}, provider request {ProviderRequestId}, transient {IsTransient}, timeout {IsTimeout}.",
+				"nvidia-receipt-answer-generator",
 				exception.HttpStatusCode,
 				exception.ProviderRequestId ?? "not-provided",
-				exception.IsTransient);
-			return Unavailable();
+				exception.IsTransient,
+				exception.IsTimeout);
+			return exception.IsTimeout ? Timeout() : Unavailable();
 		}
 	}
 
@@ -62,5 +65,12 @@ public sealed class ReceiptAssistantController(
 		{
 			Title = "Receipt assistant is temporarily unavailable.",
 			Status = StatusCodes.Status503ServiceUnavailable
+		});
+
+	private ObjectResult Timeout() =>
+		StatusCode(StatusCodes.Status504GatewayTimeout, new ProblemDetails
+		{
+			Title = "Receipt assistant timed out waiting for the answer provider.",
+			Status = StatusCodes.Status504GatewayTimeout
 		});
 }
