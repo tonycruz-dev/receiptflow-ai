@@ -16,5 +16,5 @@ public sealed class ManualExtractionOptions
 
 	public long MaximumRenderedImageBytes { get; init; } = 20 * 1024 * 1024;
 
-	public int ProcessingTimeoutSeconds { get; init; } = 180;
+	public TimeSpan ExtractionTimeout { get; init; } = TimeSpan.FromMinutes(3);
 }

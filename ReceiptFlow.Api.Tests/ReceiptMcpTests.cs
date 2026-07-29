@@ -123,7 +123,7 @@ public sealed class ReceiptMcpTests
 	{
 		var match = Match(Guid.NewGuid(), "trusted receipt evidence");
 		var generator = new StubAnswerGenerator(
-			new ReceiptGeneratedAnswer("Grounded [1]", [1]));
+			new ReceiptGeneratedAnswer("Grounded [S1]", ["S1"]));
 		var tools = CreateTools(
 			new TenantIndex(new Dictionary<string, SearchIndexMatch[]> { ["bob"] = [match] }),
 			generator);
@@ -132,7 +132,7 @@ public sealed class ReceiptMcpTests
 			Principal("bob"),
 			"What did I buy?");
 
-		Assert.Equal("Grounded [1]", result.Answer);
+		Assert.Equal("Grounded [S1]", result.Answer);
 		Assert.Equal(match.ReceiptId, Assert.Single(result.Sources).ReceiptId);
 		Assert.Equal("trusted receipt evidence", Assert.Single(generator.Evidence).Content);
 	}
@@ -169,7 +169,9 @@ public sealed class ReceiptMcpTests
 			["bob"] = [match]
 		});
 		var generator = new StubAnswerGenerator(
-			new ReceiptGeneratedAnswer("The warranty is 24 months [1]", [1]));
+			new ReceiptGeneratedAnswer(
+				"The warranty is 24 months [S1]",
+				["S1"]));
 		var tools = CreateTools(index, generator);
 
 		var search = await tools.SearchManualsAsync(
@@ -216,7 +218,7 @@ public sealed class ReceiptMcpTests
 			["bob"] = [Match(Guid.NewGuid(), "receipt")]
 		});
 		var generator = new StubAnswerGenerator(
-			new ReceiptGeneratedAnswer("Answer [1]", [1]));
+			new ReceiptGeneratedAnswer("Answer [S1]", ["S1"]));
 		var tools = CreateTools(index, generator);
 		using var cancellation = new CancellationTokenSource();
 

@@ -11,4 +11,6 @@ public sealed class TypesenseOptions
 	public string CollectionName { get; init; } = "receipt_chunks_v1";
 
 	public int EmbeddingDimensions { get; init; }
+
+	public bool RecreateIncompatibleCollection { get; init; }
 }

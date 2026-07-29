@@ -54,6 +54,7 @@ Aspire injects these into API, worker and MCP projects. Do not commit user secre
 | `Typesense:ApiKey` or `TYPESENSE_API_KEY` | Typesense API key | API, Worker, MCP | Yes | `<typesense-api-key>` |
 | `Typesense:CollectionName` | Versioned collection | API, Worker, MCP | No | `receipt_chunks_v1` |
 | `Typesense:EmbeddingDimensions` | Must match collection schema | API, Worker, MCP | No | `1024` |
+| `Typesense:RecreateIncompatibleCollection` | Explicit incompatible-schema recovery (Development only) | API, Worker, MCP | No | `false` |
 | `VITE_API_BASE_URL` | Frontend API origin | Web | No | `https://localhost:7001` |
 | `VITE_KEYCLOAK_URL` | Frontend Keycloak origin | Web | No | `https://localhost:6001` |
 | `VITE_KEYCLOAK_REALM` | Frontend realm | Web | No | `receipt` |
@@ -71,6 +72,26 @@ dotnet run --project ReceiptFlow.AI.AppHost
 ```
 
 Use `http://localhost:3000` for the web app. Do not use Aspire's internal Vite target URL as a browser bookmark or Keycloak redirect URI.
+
+### Recovering a development Typesense collection
+
+Aspire stores Typesense data in the persistent `typesense-receipt-data`
+Docker volume, so an older `receipt_chunks_v1` schema survives application
+restarts. To recover that collection, temporarily set
+`Typesense:RecreateIncompatibleCollection` to `true` for one Development
+process (normally the API) and start the application. ReceiptFlow first
+exports the configured collection's documents, then deletes and recreates
+only `receipt_chunks_v1`, and finally restores the documents into the current
+schema. Legacy receipt documents receive the current receipt discriminator
+fields during restore. No PostgreSQL data, Docker volume, or unrelated
+Typesense collection is deleted.
+
+Set the option back to `false` after recovery. The option is ignored outside
+the Development environment even if it is accidentally configured as true.
+For a production schema migration, increment the physical collection version,
+reindex it from PostgreSQL, validate the indexed document count, and switch a
+stable Typesense alias only after indexing succeeds. Retain the old collection
+until the alias switch has been verified.
 
 ## Database Migrations
 

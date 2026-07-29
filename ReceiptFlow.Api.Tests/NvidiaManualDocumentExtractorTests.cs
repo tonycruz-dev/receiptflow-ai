@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using ReceiptFlow.Application.Abstractions.Extraction;
 using ReceiptFlow.Infrastructure;
 using UglyToad.PdfPig.Content;
@@ -15,7 +16,7 @@ namespace ReceiptFlow.Api.Tests;
 public sealed class NvidiaManualDocumentExtractorTests
 {
 	[Fact]
-	public async Task TextPdf_MapsManualMetadataAndSections()
+	public async Task TextPdf_UsesEmbeddedTextWithoutProviderRoundTrip()
 	{
 		var handler = new FakeNvidiaHandler(SuccessResponse());
 		var extractor = CreateExtractor(handler);
@@ -24,15 +25,40 @@ public sealed class NvidiaManualDocumentExtractorTests
 			new MemoryStream(CreateTextPdf(pageCount: 1)),
 			CancellationToken.None);
 
-		Assert.Equal("Acme", result.Metadata.Manufacturer);
-		Assert.Equal("Toaster", result.Metadata.ProductName);
-		Assert.Equal("TX-100", result.Metadata.ModelNumber);
-		Assert.Equal("2.1", result.Metadata.VersionLabel);
-		Assert.Equal(24, result.Metadata.WarrantyDurationMonths);
+		Assert.Null(result.Metadata.Manufacturer);
+		Assert.Null(result.Metadata.ProductName);
+		Assert.Null(result.Metadata.ModelNumber);
+		Assert.Null(result.Metadata.VersionLabel);
+		Assert.Null(result.Metadata.WarrantyDurationMonths);
 		Assert.Single(result.Sections);
 		Assert.Equal(1, result.PageCount);
-		Assert.Contains("Acme TX-100 product manual", handler.RequestBody);
-		Assert.Equal(1, handler.CallCount);
+		Assert.Equal("PdfPig", result.Provider);
+		Assert.Equal("embedded-text", result.ModelId);
+		Assert.Contains(
+			"Acme TX-100 product manual",
+			Assert.Single(result.Sections).Content);
+		Assert.Equal(0, handler.CallCount);
+	}
+
+	[Fact]
+	public async Task DysonStyleSixteenPageTextPdfCompletesWithinLimit()
+	{
+		var handler = new FakeNvidiaHandler(DysonSuccessResponse());
+		var extractor = CreateExtractor(handler);
+		using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+		var result = await extractor.ExtractAsync(
+			new MemoryStream(CreateDysonTextPdf()),
+			cancellation.Token);
+
+		Assert.Equal(16, result.PageCount);
+		Assert.Contains(
+			result.Sections,
+			section => section.Content.Contains(
+				"at least 24 hours",
+				StringComparison.OrdinalIgnoreCase));
+		Assert.Equal("PdfPig", result.Provider);
+		Assert.Equal(0, handler.CallCount);
 	}
 
 	[Fact]
@@ -83,10 +109,22 @@ public sealed class NvidiaManualDocumentExtractorTests
 		Assert.Equal(0, handler.CallCount);
 	}
 
+	[Fact]
+	public void ExtractionTimeoutMustBePositive()
+	{
+		var handler = new FakeNvidiaHandler(SuccessResponse());
+
+		var exception = Assert.Throws<OptionsValidationException>(
+			() => CreateExtractor(handler, extractionTimeout: "00:00:00"));
+
+		Assert.Contains("ExtractionTimeout", exception.Message);
+	}
+
 	private static IManualDocumentExtractor CreateExtractor(
 		FakeNvidiaHandler handler,
 		int maximumPages = 100,
-		long maximumFileBytes = 10 * 1024 * 1024)
+		long maximumFileBytes = 10 * 1024 * 1024,
+		string extractionTimeout = "00:03:00")
 	{
 		var configuration = new ConfigurationBuilder()
 			.AddInMemoryCollection(new Dictionary<string, string?>
@@ -104,7 +142,7 @@ public sealed class NvidiaManualDocumentExtractorTests
 				["ManualExtraction:MaximumSections"] = "500",
 				["ManualExtraction:MaximumSectionCharacters"] = "50000",
 				["ManualExtraction:MaximumRenderedImageBytes"] = "20971520",
-				["ManualExtraction:ProcessingTimeoutSeconds"] = "180"
+				["ManualExtraction:ExtractionTimeout"] = extractionTimeout
 			})
 			.Build();
 
@@ -132,6 +170,22 @@ public sealed class NvidiaManualDocumentExtractorTests
 				12,
 				new PdfPoint(50, 750),
 				font);
+		}
+
+		return builder.Build();
+	}
+
+	private static byte[] CreateDysonTextPdf()
+	{
+		var builder = new PdfDocumentBuilder();
+		var font = builder.AddStandard14Font(Standard14Font.Helvetica);
+		for (var pageNumber = 1; pageNumber <= 16; pageNumber++)
+		{
+			var page = builder.AddPage(PageSize.A4);
+			var text = pageNumber == 10
+				? "Dyson V11 filter care. Allow the filter to dry for at least 24 hours."
+				: $"Dyson V11 operating instructions page {pageNumber}.";
+			page.AddText(text, 12, new PdfPoint(50, 750), font);
 		}
 
 		return builder.Build();
@@ -194,6 +248,42 @@ public sealed class NvidiaManualDocumentExtractorTests
 			    }
 			  ],
 			  "confidence": 0.96
+			}
+			""";
+		return JsonSerializer.Serialize(new
+		{
+			choices = new[]
+			{
+				new
+				{
+					message = new
+					{
+						content
+					}
+				}
+			}
+		});
+	}
+
+	private static string DysonSuccessResponse()
+	{
+		var content =
+			"""
+			{
+			  "manufacturer": "Dyson",
+			  "productName": "Dyson V11 Cordless Stick Vacuum",
+			  "modelNumber": "SV14 / V11",
+			  "versionLabel": "269232-01",
+			  "warrantyDurationMonths": 24,
+			  "sections": [
+			    {
+			      "headingPath": "Washing the filter",
+			      "pageStart": 10,
+			      "pageEnd": 10,
+			      "content": "Allow the filter to dry for at least 24 hours."
+			    }
+			  ],
+			  "confidence": 0.99
 			}
 			""";
 		return JsonSerializer.Serialize(new

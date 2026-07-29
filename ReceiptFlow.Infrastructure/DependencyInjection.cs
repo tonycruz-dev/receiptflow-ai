@@ -253,8 +253,9 @@ public static class DependencyInjection
 					options.MaximumSections > 0 &&
 					options.MaximumSectionCharacters > 0 &&
 					options.MaximumRenderedImageBytes > 0 &&
-					options.ProcessingTimeoutSeconds > 0,
-				"ManualExtraction limits must all be greater than zero.")
+					options.ExtractionTimeout > TimeSpan.Zero &&
+					options.ExtractionTimeout <= TimeSpan.FromHours(1),
+				"ManualExtraction limits must be positive and ExtractionTimeout must not exceed one hour.")
 			.ValidateOnStart();
 
 		services.AddHttpClient("NvidiaManualDocumentExtractor")
@@ -371,7 +372,7 @@ public static class DependencyInjection
 		services.AddHttpClient("NvidiaTextEmbeddingGenerator");
 		services.AddHttpClient("TypesenseSearchIndex");
 		services.AddScoped<ITextEmbeddingGenerator, NvidiaTextEmbeddingGenerator>();
-		services.AddScoped<ISearchIndex, TypesenseSearchIndex>();
+		services.AddSingleton<ISearchIndex, TypesenseSearchIndex>();
 
 		return services;
 	}

@@ -254,7 +254,7 @@ public sealed class ProductManualProcessingTests
 			dbContext,
 			new FakeStorage(),
 			new BlockingExtractor(),
-			DefaultLimits(processingTimeoutSeconds: 1));
+			DefaultLimits(extractionTimeoutSeconds: 1));
 
 		var exception = await Assert.ThrowsAsync<DocumentExtractionException>(
 			() => consumer.HandleAsync(CreateMessage(manual)));
@@ -263,6 +263,80 @@ public sealed class ProductManualProcessingTests
 		Assert.Contains("time limit", exception.Message);
 		Assert.Equal(DocumentProcessingStatus.Queued, manual.Document.ProcessingStatus);
 		Assert.Equal(ProductManualLifecycleStatus.Processing, manual.LifecycleStatus);
+	}
+
+	[Fact]
+	public async Task Consumer_ExternalCancellationIsNotReportedAsExtractionTimeout()
+	{
+		await using var dbContext = CreateDbContext();
+		var manual = SeedQueuedManual(dbContext);
+		var consumer = CreateConsumer(
+			dbContext,
+			new FakeStorage(),
+			new BlockingExtractor(),
+			DefaultLimits(extractionTimeoutSeconds: 10));
+		using var cancellation = new CancellationTokenSource(
+			TimeSpan.FromMilliseconds(100));
+
+		var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+			() => consumer.HandleAsync(
+				CreateMessage(manual),
+				cancellation.Token));
+
+		Assert.IsNotType<DocumentExtractionException>(exception);
+		Assert.Equal(DocumentProcessingStatus.Queued, manual.Document.ProcessingStatus);
+		Assert.Equal(ProductManualLifecycleStatus.Processing, manual.LifecycleStatus);
+	}
+
+	[Fact]
+	public async Task Consumer_TransientExtractorExceptionPreservesOriginalCause()
+	{
+		await using var dbContext = CreateDbContext();
+		var manual = SeedQueuedManual(dbContext);
+		var cause = new InvalidOperationException("provider cause");
+		var expected = new DocumentExtractionException(
+			"Temporary extraction failure.",
+			isTransient: true,
+			cause);
+		var consumer = CreateConsumer(
+			dbContext,
+			new FakeStorage(),
+			new SequencedExtractor(expected));
+
+		var actual = await Assert.ThrowsAsync<DocumentExtractionException>(
+			() => consumer.HandleAsync(CreateMessage(manual)));
+
+		Assert.Same(expected, actual);
+		Assert.Same(cause, actual.InnerException);
+	}
+
+	[Fact]
+	public async Task Consumer_PostExtractionSectioningDoesNotConsumeExtractionDeadline()
+	{
+		await using var dbContext = CreateDbContext();
+		var manual = SeedQueuedManual(dbContext);
+		var result = SuccessfulResult();
+		result = result with
+		{
+			Sections = new DelayedReadOnlyList<ExtractedManualSection>(
+				result.Sections,
+				TimeSpan.FromMilliseconds(600))
+		};
+		var consumer = CreateConsumer(
+			dbContext,
+			new FakeStorage(),
+			new SequencedExtractor(result),
+			DefaultLimits(extractionTimeoutSeconds: 1));
+
+		await consumer.HandleAsync(CreateMessage(manual));
+
+		Assert.Equal(
+			DocumentProcessingStatus.AwaitingReview,
+			manual.Document.ProcessingStatus);
+		Assert.Equal(
+			ProductManualLifecycleStatus.ReviewRequired,
+			manual.LifecycleStatus);
+		Assert.Equal(2, await dbContext.ManualSections.CountAsync());
 	}
 
 	[Fact]
@@ -482,7 +556,7 @@ public sealed class ProductManualProcessingTests
 
 	private static ManualExtractionOptions DefaultLimits(
 		int maximumSectionCharacters = 50_000,
-		int processingTimeoutSeconds = 10) =>
+		int extractionTimeoutSeconds = 10) =>
 		new()
 		{
 			MaximumFileBytes = 10 * 1024 * 1024,
@@ -491,7 +565,7 @@ public sealed class ProductManualProcessingTests
 			MaximumSections = 500,
 			MaximumSectionCharacters = maximumSectionCharacters,
 			MaximumRenderedImageBytes = 20 * 1024 * 1024,
-			ProcessingTimeoutSeconds = processingTimeoutSeconds
+			ExtractionTimeout = TimeSpan.FromSeconds(extractionTimeoutSeconds)
 		};
 
 	private static byte[] ValidPdfSignature() =>
@@ -693,5 +767,23 @@ public sealed class ProductManualProcessingTests
 			await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
 			throw new InvalidOperationException();
 		}
+	}
+
+	private sealed class DelayedReadOnlyList<T>(
+		IReadOnlyList<T> values,
+		TimeSpan delay)
+		: IReadOnlyList<T>
+	{
+		public int Count => values.Count;
+		public T this[int index] => values[index];
+
+		public IEnumerator<T> GetEnumerator()
+		{
+			Thread.Sleep(delay);
+			return values.GetEnumerator();
+		}
+
+		System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
+			GetEnumerator();
 	}
 }

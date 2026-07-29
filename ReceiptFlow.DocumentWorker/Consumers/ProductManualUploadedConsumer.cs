@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -28,6 +29,8 @@ public sealed class ProductManualUploadedConsumer(
 		ProductManualUploadedV1 message,
 		CancellationToken cancellationToken = default)
 	{
+		var processingStarted = Stopwatch.GetTimestamp();
+		var stageStarted = processingStarted;
 		var document = await dbContext.Documents
 			.Include(candidate => candidate.ManualExtraction)
 			.Include(candidate => candidate.ProductManual!)
@@ -39,6 +42,11 @@ public sealed class ProductManualUploadedConsumer(
 			.SingleOrDefaultAsync(
 				candidate => candidate.Id == message.DocumentId,
 				cancellationToken);
+		LogStageCompleted(
+			"load",
+			message.ProductManualId,
+			message.DocumentId,
+			stageStarted);
 
 		if (document?.ProductManual is not { } manual)
 		{
@@ -105,29 +113,57 @@ public sealed class ProductManualUploadedConsumer(
 
 		try
 		{
-			await using var content = await documentStorage.OpenReadAsync(
+			stageStarted = Stopwatch.GetTimestamp();
+			await using var storedContent = await documentStorage.OpenReadAsync(
 				document.StorageKey,
 				cancellationToken);
-			using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+			await using var content = await BufferContentAsync(
+				storedContent,
+				limits.MaximumFileBytes,
 				cancellationToken);
-			timeout.CancelAfter(TimeSpan.FromSeconds(limits.ProcessingTimeoutSeconds));
+			LogStageCompleted(
+				"download",
+				manual.Id,
+				document.Id,
+				stageStarted);
+
+			using var extractionDeadline = new CancellationTokenSource(
+				limits.ExtractionTimeout);
+			using var extractionCancellation =
+				CancellationTokenSource.CreateLinkedTokenSource(
+					cancellationToken,
+					extractionDeadline.Token);
 
 			ManualDocumentExtractionResult result;
+			stageStarted = Stopwatch.GetTimestamp();
 			try
 			{
 				result = await documentExtractor.ExtractAsync(
 					content,
-					timeout.Token);
+					extractionCancellation.Token);
 			}
-			catch (OperationCanceledException)
+			catch (OperationCanceledException exception)
 				when (!cancellationToken.IsCancellationRequested &&
-					timeout.IsCancellationRequested)
+					extractionDeadline.IsCancellationRequested)
 			{
+				logger.LogWarning(
+					"Product manual extraction deadline exceeded for manual {ProductManualId}, document {DocumentId}, elapsed {ElapsedMs} ms, configured timeout {ConfiguredTimeoutMs} ms.",
+					manual.Id,
+					document.Id,
+					Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds,
+					limits.ExtractionTimeout.TotalMilliseconds);
 				throw new DocumentExtractionException(
 					"Manual extraction exceeded the processing time limit.",
-					isTransient: true);
+					isTransient: true,
+					exception);
 			}
+			LogStageCompleted(
+				"extraction",
+				manual.Id,
+				document.Id,
+				stageStarted);
 
+			stageStarted = Stopwatch.GetTimestamp();
 			ValidateResult(result);
 			pendingExtraction = new ManualExtraction(
 				manual,
@@ -149,19 +185,32 @@ public sealed class ProductManualUploadedConsumer(
 					section.PageStart,
 					section.PageEnd))
 				.ToArray();
+			LogStageCompleted(
+				"sectioning",
+				manual.Id,
+				document.Id,
+				stageStarted);
 
+			stageStarted = Stopwatch.GetTimestamp();
 			dbContext.ManualExtractions.Add(pendingExtraction);
 			dbContext.ManualSections.AddRange(pendingSections);
 			document.MarkAwaitingReview(result.PageCount, extractedTextStorageKey: null);
 			manual.MarkReviewRequired();
 			await dbContext.SaveChangesAsync(cancellationToken);
+			LogStageCompleted(
+				"persistence",
+				manual.Id,
+				document.Id,
+				stageStarted);
 
 			logger.LogInformation(
-				"Product manual extraction completed for document {DocumentId} with {SectionCount} sections using provider {Provider} and model {ModelId}.",
+				"Product manual extraction completed for manual {ProductManualId}, document {DocumentId}, with {SectionCount} sections using provider {Provider} and model {ModelId}, total elapsed {ElapsedMs} ms.",
+				manual.Id,
 				document.Id,
 				pendingSections.Length,
 				result.Provider,
-				result.ModelId);
+				result.ModelId,
+				Stopwatch.GetElapsedTime(processingStarted).TotalMilliseconds);
 		}
 		catch (DocumentExtractionException exception)
 			when (exception.IsTransient)
@@ -170,6 +219,12 @@ public sealed class ProductManualUploadedConsumer(
 			document.MarkQueuedForRetry();
 			manual.MarkProcessingForRetry();
 			await dbContext.SaveChangesAsync(CancellationToken.None);
+			logger.LogWarning(
+				exception,
+				"Transient product manual extraction failure for manual {ProductManualId}, document {DocumentId}, total elapsed {ElapsedMs} ms.",
+				manual.Id,
+				document.Id,
+				Stopwatch.GetElapsedTime(processingStarted).TotalMilliseconds);
 			throw;
 		}
 		catch (OperationCanceledException)
@@ -179,6 +234,11 @@ public sealed class ProductManualUploadedConsumer(
 			document.MarkQueuedForRetry();
 			manual.MarkProcessingForRetry();
 			await dbContext.SaveChangesAsync(CancellationToken.None);
+			logger.LogInformation(
+				"Product manual processing was cancelled externally for manual {ProductManualId}, document {DocumentId}, total elapsed {ElapsedMs} ms.",
+				manual.Id,
+				document.Id,
+				Stopwatch.GetElapsedTime(processingStarted).TotalMilliseconds);
 			throw;
 		}
 		catch (Exception exception)
@@ -189,6 +249,7 @@ public sealed class ProductManualUploadedConsumer(
 				: "Product manual extraction failed.";
 			await MarkFailedAsync(document, manual, reason);
 			logger.LogWarning(
+				exception,
 				"Product manual extraction failed for document {DocumentId}: {FailureReason}",
 				document.Id,
 				reason);
@@ -314,6 +375,54 @@ public sealed class ProductManualUploadedConsumer(
 				dbContext.Entry(section).State = EntityState.Detached;
 		}
 	}
+
+	private static async Task<MemoryStream> BufferContentAsync(
+		Stream source,
+		long maximumBytes,
+		CancellationToken cancellationToken)
+	{
+		var content = new MemoryStream();
+		var buffer = new byte[81920];
+		long total = 0;
+
+		try
+		{
+			while (true)
+			{
+				var read = await source.ReadAsync(buffer, cancellationToken);
+				if (read == 0)
+					break;
+
+				total += read;
+				if (total > maximumBytes)
+				throw InvalidResult("Manual file content exceeds the configured limit.");
+
+				await content.WriteAsync(
+					buffer.AsMemory(0, read),
+					cancellationToken);
+			}
+
+			content.Position = 0;
+			return content;
+		}
+		catch
+		{
+			await content.DisposeAsync();
+			throw;
+		}
+	}
+
+	private void LogStageCompleted(
+		string stage,
+		Guid manualId,
+		Guid documentId,
+		long stageStarted) =>
+		logger.LogInformation(
+			"Product manual processing stage {Stage} completed for manual {ProductManualId}, document {DocumentId}, elapsed {ElapsedMs} ms.",
+			stage,
+			manualId,
+			documentId,
+			Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds);
 
 	private static void ValidateLength(string? value, int maximumLength)
 	{

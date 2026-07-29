@@ -223,7 +223,7 @@ public sealed class ReceiptSearchTests
 		var result = await index.SearchAsync(new SearchIndexQuery(
 			"electronics usb",
 			"bob`tenant\\id",
-			Enumerable.Repeat(0.1f, 1024).ToArray(),
+			[.. Enumerable.Repeat(0.1f, 1024)],
 			1,
 			10));
 
@@ -295,7 +295,7 @@ public sealed class ReceiptSearchTests
 		var result = await index.SearchAsync(new SearchIndexQuery(
 			"usb",
 			"user-b",
-			Enumerable.Repeat(0.1f, 1024).ToArray(),
+			[.. Enumerable.Repeat(0.1f, 1024)],
 			1,
 			10));
 
@@ -325,7 +325,7 @@ public sealed class ReceiptSearchTests
 		var result = await index.SearchAsync(new SearchIndexQuery(
 			"usb",
 			"user-b",
-			Enumerable.Repeat(0.1f, 1024).ToArray(),
+			[.. Enumerable.Repeat(0.1f, 1024)],
 			1,
 			10));
 
@@ -371,7 +371,7 @@ public sealed class ReceiptSearchTests
 		var result = await index.SearchAsync(new SearchIndexQuery(
 			"usb",
 			"user-b",
-			Enumerable.Repeat(0.1f, 1024).ToArray(),
+			[.. Enumerable.Repeat(0.1f, 1024)],
 			1,
 			10));
 
@@ -397,7 +397,7 @@ public sealed class ReceiptSearchTests
 			index.SearchAsync(new SearchIndexQuery(
 				"usb",
 				"user-b",
-				Enumerable.Repeat(0.1f, 1024).ToArray(),
+				[.. Enumerable.Repeat(0.1f, 1024)],
 				1,
 				10)));
 
@@ -426,7 +426,7 @@ public sealed class ReceiptSearchTests
 			index.SearchAsync(new SearchIndexQuery(
 				"usb",
 				"user-b",
-				Enumerable.Repeat(0.1f, 1024).ToArray(),
+				[.. Enumerable.Repeat(0.1f, 1024)],
 				1,
 				10)));
 
@@ -456,7 +456,7 @@ public sealed class ReceiptSearchTests
 			index.SearchAsync(new SearchIndexQuery(
 				"usb",
 				"user-b",
-				Enumerable.Repeat(0.1f, 1024).ToArray(),
+				[.. Enumerable.Repeat(0.1f, 1024)],
 				1,
 				10)));
 
@@ -582,25 +582,25 @@ public sealed class ReceiptSearchTests
 			{
 				new { name = "owner_user_id", type = "string", facet = true },
 				new { name = "document_type", type = "string", facet = true },
-				new { name = "receipt_id", type = "string" },
-				new { name = "product_id", type = "string" },
-				new { name = "manual_id", type = "string" },
-				new { name = "document_id", type = "string" },
+				new { name = "receipt_id", type = "string", facet = true, optional = true },
+				new { name = "product_id", type = "string", facet = true, optional = true },
+				new { name = "manual_id", type = "string", facet = true, optional = true },
+				new { name = "document_id", type = "string", facet = true },
 				new { name = "chunk_index", type = "int32" },
 				new { name = "content", type = "string" },
-				new { name = "merchant_name", type = "string" },
-				new { name = "category", type = "string" },
-				new { name = "transaction_date", type = "int64" },
-				new { name = "currency", type = "string" },
-				new { name = "total", type = "float" },
-				new { name = "product_manufacturer", type = "string" },
-				new { name = "product_name", type = "string" },
-				new { name = "model_number", type = "string" },
-				new { name = "manual_version", type = "string" },
-				new { name = "locale", type = "string" },
-				new { name = "warranty_months", type = "int32" },
-				new { name = "section_heading", type = "string" },
-				new { name = "is_active_manual", type = "bool" },
+				new { name = "merchant_name", type = "string", optional = true },
+				new { name = "category", type = "string", optional = true },
+				new { name = "transaction_date", type = "int64", optional = true },
+				new { name = "currency", type = "string", facet = true, optional = true },
+				new { name = "total", type = "float", optional = true },
+				new { name = "product_manufacturer", type = "string", optional = true },
+				new { name = "product_name", type = "string", optional = true },
+				new { name = "model_number", type = "string", optional = true },
+				new { name = "manual_version", type = "string", facet = true, optional = true },
+				new { name = "locale", type = "string", facet = true, optional = true },
+				new { name = "warranty_months", type = "int32", optional = true },
+				new { name = "section_heading", type = "string", optional = true },
+				new { name = "is_active_manual", type = "bool", facet = true },
 				new { name = "content_checksum", type = "string" },
 				new { name = "extracted_at", type = "int64" },
 				new { name = "embedding", type = "float[]", num_dim = dimensions }

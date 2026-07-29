@@ -3,7 +3,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using ReceiptFlow.Application.Abstractions.Search;
 
@@ -11,7 +13,8 @@ namespace ReceiptFlow.Infrastructure.Search;
 
 internal sealed class TypesenseSearchIndex(
 	IHttpClientFactory httpClientFactory,
-	IOptions<TypesenseOptions> options)
+	IOptions<TypesenseOptions> options,
+	IHostEnvironment? hostEnvironment = null)
 	: ISearchIndex
 {
 	private const string HttpClientName = "TypesenseSearchIndex";
@@ -57,7 +60,9 @@ internal sealed class TypesenseSearchIndex(
 					query_by_weights = "5,3,2,1,3,4,4,3,3",
 					vector_query = $"embedding:([{vector}], alpha: 0.5)",
 					filter_by = BuildSearchFilter(query.OwnerUserId, query.DocumentType),
-					sort_by = "is_active_manual:desc,_text_match:desc",
+					sort_by = query.DocumentType == SearchDocumentTypeFilter.ProductManual
+						? "is_active_manual:desc,_text_match:desc"
+						: "_text_match:desc",
 					drop_tokens_threshold = 0,
 					rerank_hybrid_matches = true,
 					page = query.Page,
@@ -186,11 +191,15 @@ internal sealed class TypesenseSearchIndex(
 				IsTransient(response.StatusCode));
 		}
 
-		await ValidateImportResponseAsync(response, cancellationToken);
+		await ValidateImportResponseAsync(
+			response,
+			documents.Count,
+			cancellationToken);
 	}
 
 	private static async Task ValidateImportResponseAsync(
 		HttpResponseMessage response,
+		int expectedDocumentCount,
 		CancellationToken cancellationToken)
 	{
 		var content = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -203,6 +212,13 @@ internal sealed class TypesenseSearchIndex(
 		{
 			throw new SearchIndexingException(
 				"Typesense upsert response was empty.",
+				isTransient: false);
+		}
+
+		if (lines.Length != expectedDocumentCount)
+		{
+			throw new SearchIndexingException(
+				"Typesense upsert response count did not match the request.",
 				isTransient: false);
 		}
 
@@ -331,24 +347,38 @@ internal sealed class TypesenseSearchIndex(
 					IsTransient(getResponse.StatusCode));
 			}
 
-			var schema = await getResponse.Content
-				.ReadFromJsonAsync<TypesenseCollectionSchema>(
-					JsonOptions,
-					cancellationToken);
-			var embeddingField = schema?.Fields.SingleOrDefault(field =>
-				field.Name == "embedding");
+			TypesenseCollectionSchema? schema;
 
-			if (embeddingField?.NumDim != options.EmbeddingDimensions)
+			try
+			{
+				schema = await getResponse.Content
+					.ReadFromJsonAsync<TypesenseCollectionSchema>(
+						JsonOptions,
+						cancellationToken);
+			}
+			catch (JsonException exception)
 			{
 				throw new SearchIndexingException(
-					"Existing Typesense schema embedding dimension is incompatible.",
-					isTransient: false);
+					"Typesense collection schema response was malformed.",
+					isTransient: false,
+					exception);
 			}
 
-			if (schema is null || !IsCompatibleSchema(schema))
+			var mismatches = GetSchemaMismatches(schema);
+
+			if (mismatches.Count != 0)
 			{
+				if (options.RecreateIncompatibleCollection &&
+					hostEnvironment?.IsDevelopment() == true)
+				{
+					await RecreateCollectionAsync(cancellationToken);
+					schemaReady = true;
+					return;
+				}
+
 				throw new SearchIndexingException(
-					"Existing Typesense collection schema is incompatible.",
+					"Existing Typesense collection schema is incompatible: " +
+					string.Join("; ", mismatches) + ".",
 					isTransient: false);
 			}
 
@@ -358,54 +388,244 @@ internal sealed class TypesenseSearchIndex(
 		{
 			schemaLock.Release();
 		}
-		}
+	}
 
-	private bool IsCompatibleSchema(TypesenseCollectionSchema schema)
+	private IReadOnlyList<string> GetSchemaMismatches(
+		TypesenseCollectionSchema? schema)
 	{
-		var expectedFields = new Dictionary<string, string>(StringComparer.Ordinal)
-		{
-			["owner_user_id"] = "string",
-			["document_type"] = "string",
-			["receipt_id"] = "string",
-			["product_id"] = "string",
-			["manual_id"] = "string",
-			["document_id"] = "string",
-			["chunk_index"] = "int32",
-			["content"] = "string",
-			["merchant_name"] = "string",
-			["category"] = "string",
-			["transaction_date"] = "int64",
-			["currency"] = "string",
-			["total"] = "float",
-			["product_manufacturer"] = "string",
-			["product_name"] = "string",
-			["model_number"] = "string",
-			["manual_version"] = "string",
-			["locale"] = "string",
-			["warranty_months"] = "int32",
-			["section_heading"] = "string",
-			["is_active_manual"] = "bool",
-			["content_checksum"] = "string",
-			["extracted_at"] = "int64",
-			["embedding"] = "float[]"
-		};
+		if (schema?.Fields is null)
+			return ["schema response did not contain fields"];
 
-		foreach (var expected in expectedFields)
-		{
-			var field = schema.Fields.SingleOrDefault(candidate =>
-				candidate.Name == expected.Key);
+		var mismatches = new List<string>();
+		var actualFields = new Dictionary<string, TypesenseField>(
+			StringComparer.Ordinal);
 
-			if (field?.Type != expected.Value)
-				return false;
+		foreach (var field in schema.Fields)
+		{
+			if (!actualFields.TryAdd(field.Name, field))
+				mismatches.Add($"field '{field.Name}' is returned more than once");
 		}
 
-		var ownerField = schema.Fields.Single(field =>
-			field.Name == "owner_user_id");
-		var embeddingField = schema.Fields.Single(field =>
-			field.Name == "embedding");
+		foreach (var expected in GetExpectedFields())
+		{
+			if (!actualFields.Remove(expected.Name, out var actual))
+			{
+				mismatches.Add($"field '{expected.Name}' is missing");
+				continue;
+			}
 
-		return ownerField.Facet == true &&
-			embeddingField.NumDim == options.EmbeddingDimensions;
+			CompareField(expected, actual, mismatches);
+		}
+
+		foreach (var unexpected in actualFields.Keys.Order(StringComparer.Ordinal))
+			mismatches.Add($"field '{unexpected}' is unexpected");
+
+		var expectedDefaultSort = string.Empty;
+		var actualDefaultSort = schema.DefaultSortingField ?? string.Empty;
+
+		if (!string.Equals(
+				expectedDefaultSort,
+				actualDefaultSort,
+				StringComparison.Ordinal))
+		{
+			mismatches.Add(
+				$"default_sorting_field expected '<none>' but was '{actualDefaultSort}'");
+		}
+
+		return mismatches;
+	}
+
+	private static void CompareField(
+		ExpectedTypesenseField expected,
+		TypesenseField actual,
+		ICollection<string> mismatches)
+	{
+		Compare("type", expected.Type, actual.Type);
+		Compare("optional", expected.Optional ?? false, actual.Optional ?? false);
+		Compare("facet", expected.Facet ?? false, actual.Facet ?? false);
+		Compare("index", expected.Index ?? true, actual.Index ?? true);
+		Compare(
+			"sort",
+			TypesenseSchemaDefaults.Sort(expected.Type, expected.Sort),
+			TypesenseSchemaDefaults.Sort(actual.Type, actual.Sort));
+		Compare("locale", expected.Locale ?? string.Empty, actual.Locale ?? string.Empty);
+		Compare(
+			"reference",
+			expected.Reference ?? string.Empty,
+			actual.Reference ?? string.Empty);
+		Compare("infix", expected.Infix ?? false, actual.Infix ?? false);
+		Compare("store", expected.Store ?? true, actual.Store ?? true);
+		Compare("num_dim", expected.NumDim, actual.NumDim);
+
+		void Compare<T>(string property, T expectedValue, T actualValue)
+		{
+			if (!EqualityComparer<T>.Default.Equals(expectedValue, actualValue))
+			{
+				mismatches.Add(
+					$"field '{expected.Name}' {property} expected " +
+					$"'{Format(expectedValue)}' but was '{Format(actualValue)}'");
+			}
+		}
+
+		static string Format<T>(T value) =>
+			value is null ? "<none>" : value.ToString() ?? "<none>";
+	}
+
+	private IReadOnlyList<ExpectedTypesenseField> GetExpectedFields() =>
+	[
+		// Typesense's id field is implicit and is omitted from collection
+		// schema responses even when it is present in the creation request.
+		Field("owner_user_id", "string", facet: true),
+		Field("document_type", "string", facet: true),
+		Field("receipt_id", "string", facet: true, optional: true),
+		Field("product_id", "string", facet: true, optional: true),
+		Field("manual_id", "string", facet: true, optional: true),
+		Field("document_id", "string", facet: true),
+		Field("chunk_index", "int32"),
+		Field("content", "string"),
+		Field("merchant_name", "string", optional: true),
+		Field("category", "string", optional: true),
+		Field("transaction_date", "int64", optional: true),
+		Field("currency", "string", facet: true, optional: true),
+		Field("total", "float", optional: true),
+		Field("product_manufacturer", "string", optional: true),
+		Field("product_name", "string", optional: true),
+		Field("model_number", "string", optional: true),
+		Field("manual_version", "string", facet: true, optional: true),
+		Field("locale", "string", facet: true, optional: true),
+		Field("warranty_months", "int32", optional: true),
+		Field("section_heading", "string", optional: true),
+		Field("is_active_manual", "bool", facet: true),
+		Field("content_checksum", "string"),
+		Field("extracted_at", "int64"),
+		Field(
+			"embedding",
+			"float[]",
+			numDim: options.EmbeddingDimensions)
+	];
+
+	private static ExpectedTypesenseField Field(
+		string name,
+		string type,
+		bool? facet = null,
+		bool? optional = null,
+		bool? sort = null,
+		int? numDim = null) =>
+		new(
+			name,
+			type,
+			optional,
+			facet,
+			Index: null,
+			sort,
+			Locale: null,
+			Reference: null,
+			Infix: null,
+			Store: null,
+			numDim);
+
+	private async Task RecreateCollectionAsync(
+		CancellationToken cancellationToken)
+	{
+		var documents = await ExportDocumentsForRecoveryAsync(cancellationToken);
+
+		using (var deleteRequest = CreateRequest(
+			HttpMethod.Delete,
+			$"/collections/{options.CollectionName}"))
+		using (var deleteResponse = await SendAsync(
+			deleteRequest,
+			cancellationToken))
+		{
+			if (!deleteResponse.IsSuccessStatusCode)
+			{
+				throw new SearchIndexingException(
+					"Typesense development collection recovery could not delete " +
+					"the configured collection.",
+					IsTransient(deleteResponse.StatusCode));
+			}
+		}
+
+		await CreateCollectionAsync(cancellationToken);
+
+		if (documents.Count == 0)
+			return;
+
+		var body = string.Join('\n', documents);
+		using var importRequest = CreateRequest(
+			HttpMethod.Post,
+			$"/collections/{options.CollectionName}/documents/import?action=upsert");
+		importRequest.Content = new StringContent(
+			body,
+			Encoding.UTF8,
+			"text/plain");
+		using var importResponse = await SendAsync(
+			importRequest,
+			cancellationToken);
+
+		if (!importResponse.IsSuccessStatusCode)
+		{
+			throw new SearchIndexingException(
+				"Typesense development collection recovery could not restore " +
+				"the preserved search documents.",
+				IsTransient(importResponse.StatusCode));
+		}
+
+		await ValidateImportResponseAsync(
+			importResponse,
+			documents.Count,
+			cancellationToken);
+	}
+
+	private async Task<IReadOnlyList<string>> ExportDocumentsForRecoveryAsync(
+		CancellationToken cancellationToken)
+	{
+		using var request = CreateRequest(
+			HttpMethod.Get,
+			$"/collections/{options.CollectionName}/documents/export");
+		using var response = await SendAsync(request, cancellationToken);
+
+		if (!response.IsSuccessStatusCode)
+		{
+			throw new SearchIndexingException(
+				"Typesense development collection recovery could not preserve " +
+				"the existing search documents; the collection was not deleted.",
+				IsTransient(response.StatusCode));
+		}
+
+		var content = await response.Content.ReadAsStringAsync(cancellationToken);
+		var lines = content.Split(
+			['\r', '\n'],
+			StringSplitOptions.RemoveEmptyEntries |
+			StringSplitOptions.TrimEntries);
+		var documents = new List<string>(lines.Length);
+
+		try
+		{
+			foreach (var line in lines)
+			{
+				var document = JsonNode.Parse(line)?.AsObject() ??
+					throw new JsonException("Exported document was not an object.");
+
+				// receipt_chunks_v1 originally contained receipt documents only.
+				// These values make those legacy records valid in the expanded
+				// receipt/manual schema without changing their receipt identity.
+				document.TryAdd(
+					"document_type",
+					SearchDocumentType.Receipt.ToString());
+				document.TryAdd("is_active_manual", false);
+				documents.Add(document.ToJsonString(JsonOptions));
+			}
+		}
+		catch (JsonException exception)
+		{
+			throw new SearchIndexingException(
+				"Typesense development collection recovery could not read the " +
+				"preserved search documents; the collection was not deleted.",
+				isTransient: false,
+				exception);
+		}
+
+		return documents;
 	}
 
 	private async Task CreateCollectionAsync(CancellationToken cancellationToken)
@@ -729,13 +949,35 @@ internal sealed class TypesenseSearchIndex(
 	}
 
 	private sealed record TypesenseCollectionSchema(
-		IReadOnlyList<TypesenseField> Fields);
+		IReadOnlyList<TypesenseField> Fields,
+		[property: JsonPropertyName("default_sorting_field")]
+		string? DefaultSortingField);
 
 	private sealed record TypesenseField(
 		string Name,
 		string Type,
 		bool? Facet,
+		bool? Optional,
+		bool? Index,
+		bool? Sort,
+		string? Locale,
+		string? Reference,
+		bool? Infix,
+		bool? Store,
 		[property: JsonPropertyName("num_dim")]
+		int? NumDim);
+
+	private sealed record ExpectedTypesenseField(
+		string Name,
+		string Type,
+		bool? Optional,
+		bool? Facet,
+		bool? Index,
+		bool? Sort,
+		string? Locale,
+		string? Reference,
+		bool? Infix,
+		bool? Store,
 		int? NumDim);
 
 	private sealed record TypesenseSearchResponse(
@@ -795,4 +1037,17 @@ internal sealed class TypesenseSearchIndex(
 	private sealed record TypesenseImportResult(
 		bool Success,
 		int? Code);
+}
+
+internal static class TypesenseSchemaDefaults
+{
+	internal static bool Sort(string fieldType, bool? configuredValue) =>
+		configuredValue ??
+		fieldType is "bool" or "int32" or "int64" or "float";
+
+	internal static bool SortIsEquivalent(
+		string fieldType,
+		bool? expected,
+		bool? actual) =>
+		Sort(fieldType, expected) == Sort(fieldType, actual);
 }

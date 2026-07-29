@@ -25,6 +25,8 @@ public sealed record ReceiptAnswerEvidence(
 	string? SectionHeading,
 	bool IsActiveManual)
 {
+	public string CitationToken => $"S{Citation}";
+
 	public ReceiptAnswerEvidence(
 		int citation,
 		string content,
@@ -54,4 +56,4 @@ public sealed record ReceiptAnswerEvidence(
 
 public sealed record ReceiptGeneratedAnswer(
 	string Answer,
-	IReadOnlyList<int> CitationIdentifiers);
+	IReadOnlyList<string> CitationIdentifiers);

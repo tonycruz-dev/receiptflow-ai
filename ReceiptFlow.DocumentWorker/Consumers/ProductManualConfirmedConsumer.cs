@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using ReceiptFlow.Application.Abstractions.Search;
@@ -22,9 +23,15 @@ public sealed class ProductManualConfirmedConsumer(
 		ProductManualConfirmedV1 message,
 		CancellationToken cancellationToken = default)
 	{
+		var started = Stopwatch.GetTimestamp();
 		try
 		{
 			await IndexAsync(message, cancellationToken);
+			logger.LogInformation(
+				"Product manual indexing completed for manual {ProductManualId}, document {DocumentId}, total elapsed {ElapsedMs} ms.",
+				message.ProductManualId,
+				message.DocumentId,
+				Stopwatch.GetElapsedTime(started).TotalMilliseconds);
 		}
 		catch (SearchIndexingException exception)
 			when (exception.IsTransient)
@@ -48,6 +55,7 @@ public sealed class ProductManualConfirmedConsumer(
 		ProductManualConfirmedV1 message,
 		CancellationToken cancellationToken)
 	{
+		var stageStarted = Stopwatch.GetTimestamp();
 		var manual = await dbContext.ProductManuals
 			.AsNoTracking()
 			.Include(candidate => candidate.Product)
@@ -59,6 +67,11 @@ public sealed class ProductManualConfirmedConsumer(
 					candidate.ProductId == message.ProductId &&
 					candidate.DocumentId == message.DocumentId,
 				cancellationToken);
+		LogStageCompleted(
+			"load",
+			message.ProductManualId,
+			message.DocumentId,
+			stageStarted);
 
 		if (manual is null)
 			return;
@@ -77,6 +90,7 @@ public sealed class ProductManualConfirmedConsumer(
 			return;
 		}
 
+		stageStarted = Stopwatch.GetTimestamp();
 		var confirmedManuals = await dbContext.ProductManuals
 			.AsNoTracking()
 			.Include(candidate => candidate.Product)
@@ -89,6 +103,11 @@ public sealed class ProductManualConfirmedConsumer(
 				(candidate.LifecycleStatus == ProductManualLifecycleStatus.Active ||
 				 candidate.LifecycleStatus == ProductManualLifecycleStatus.Superseded))
 			.ToArrayAsync(cancellationToken);
+		LogStageCompleted(
+			"load-confirmed-versions",
+			manual.Id,
+			manual.DocumentId,
+			stageStarted);
 
 		foreach (var confirmed in confirmedManuals)
 		{
@@ -98,10 +117,16 @@ public sealed class ProductManualConfirmedConsumer(
 			if (sections.Length == 0)
 				continue;
 
+			stageStarted = Stopwatch.GetTimestamp();
 			var embeddings = await embeddingGenerator.GenerateAsync(
 				sections.Select(section => section.Content).ToArray(),
 				EmbeddingInputType.Passage,
 				cancellationToken);
+			LogStageCompleted(
+				"embedding",
+				confirmed.Id,
+				confirmed.DocumentId,
+				stageStarted);
 
 			if (embeddings.Count != sections.Length)
 			{
@@ -117,14 +142,38 @@ public sealed class ProductManualConfirmedConsumer(
 					embeddings[index]))
 				.ToArray();
 
+			stageStarted = Stopwatch.GetTimestamp();
 			await searchIndex.UpsertAsync(documents, cancellationToken);
+			LogStageCompleted(
+				"index-upsert",
+				confirmed.Id,
+				confirmed.DocumentId,
+				stageStarted);
+			stageStarted = Stopwatch.GetTimestamp();
 			await searchIndex.DeleteObsoleteManualSectionsAsync(
 				confirmed.Id,
 				confirmed.OwnerUserId,
 				documents.Select(document => document.Id).ToHashSet(),
 				cancellationToken);
+			LogStageCompleted(
+				"index-cleanup",
+				confirmed.Id,
+				confirmed.DocumentId,
+				stageStarted);
 		}
 	}
+
+	private void LogStageCompleted(
+		string stage,
+		Guid manualId,
+		Guid documentId,
+		long stageStarted) =>
+		logger.LogInformation(
+			"Product manual indexing stage {Stage} completed for manual {ProductManualId}, document {DocumentId}, elapsed {ElapsedMs} ms.",
+			stage,
+			manualId,
+			documentId,
+			Stopwatch.GetElapsedTime(stageStarted).TotalMilliseconds);
 
 	private static SearchIndexDocument ToSearchDocument(
 		ProductManual manual,

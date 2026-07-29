@@ -42,18 +42,20 @@ The project demonstrates a realistic full-stack architecture: .NET Clean Archite
 
 ## Screenshots
 
-The screenshots below are checked-in repository assets. They are intended as demo placeholders until a final public demo run captures a consistent image set.
+Real application screenshots are used where suitable assets already exist. Partial and missing captures are explicitly labelled; no application screenshots are fabricated.
 
-| Area                                 | Preview                                                                                                                        |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| Aspire dashboard                     | ![Aspire dashboard showing ReceiptFlow local services](docs/images/Aspire%20dashboard.png)                                     |
-| Receipt dashboard                    | ![Receipt dashboard with owner-scoped receipt summaries](docs/images/Receipt%20dashboard.png)                                  |
-| Receipt upload and extraction review | ![Receipt upload and extraction review workflow](docs/images/Receipt%20upload%20and%20extraction%20review.png)                 |
-| Product manual workflow              | ![Product manual upload, extraction and version workflow](docs/images/Product%20manual%20workflow.png)                         |
-| Hybrid search                        | ![Hybrid search over receipts and manuals](docs/images/Hybrid%20search.png)                                                    |
-| Grounded assistant with citations    | ![Grounded assistant answer with citation cards](docs/images/Grounded%20assistant%20with%20citations.png)                      |
-| Purchases and warranties             | ![Purchases and warranties view with deterministic warranty status](docs/images/purchases-screenshot.png)                      |
-| MCP Inspector                        | _Screenshot placeholder: capture MCP Inspector connected to the authenticated `/mcp` endpoint before public portfolio launch._ |
+| Portfolio area                       | Screenshot status                                                                                                                | Preview or placeholder                                                                                                             |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Aspire dashboard                     | **Captured**                                                                                                                     | ![Aspire dashboard listing the ReceiptFlow local resources](docs/images/Aspire%20dashboard.png)                                   |
+| Receipt dashboard                    | **Captured**                                                                                                                     | ![ReceiptFlow dashboard showing receipt and spending summaries](docs/images/Receipt%20dashboard.png)                              |
+| Receipt upload and extraction review | **Partial capture** — the upload entry point is shown; capture the populated extraction-review form during the final demo run.   | ![ReceiptFlow upload page with receipt and product-manual workflow choices](docs/images/upload-screenshot.png)                     |
+| Product manual workflow              | **Partial capture** — the product/manual entry point is shown; capture upload, review and active-version states for final release. | ![ReceiptFlow products page with product creation and manual upload actions](docs/images/Product%20manual%20workflow.png)          |
+| Hybrid search                        | **Captured**                                                                                                                     | ![ReceiptFlow hybrid search interface for receipts and product manuals](docs/images/Hybrid%20search.png)                           |
+| Grounded assistant with citations    | **Captured**                                                                                                                     | ![ReceiptFlow grounded assistant displaying an answer and trusted citation cards](docs/images/Grounded%20assistant%20with%20citations.png) |
+| Purchases and warranties             | **Captured**                                                                                                                     | ![ReceiptFlow purchases page showing linked purchases and warranty status](docs/images/purchases-screenshot.png)                   |
+| MCP Inspector                        | **Screenshot placeholder** — capture MCP Inspector connected to the authenticated `/mcp` endpoint before portfolio publication. | _No suitable repository screenshot exists yet._                                                                                   |
+
+The asset inventory and remaining capture notes are in [docs/images/README.md](docs/images/README.md).
 
 ## Architecture
 
@@ -173,7 +175,7 @@ sequenceDiagram
   participant Db as PostgreSQL + EF outbox
   participant Bus as RabbitMQ
   participant Worker as DocumentWorker
-  participant AI as NVIDIA manual extractor
+  participant Extract as PdfPig / NVIDIA fallback
   participant Search as Typesense
 
   User->>Web: Select/create product and upload manual PDF
@@ -184,7 +186,7 @@ sequenceDiagram
   Db->>Bus: Publish upload event
   Bus->>Worker: Deliver manual extraction event
   Worker->>Store: Read manual
-  Worker->>AI: Extract metadata + ordered sections
+  Worker->>Extract: Extract embedded text locally or scan via NVIDIA
   Worker->>Db: Persist ManualExtraction + ManualSections
   Worker->>Db: Mark ReviewRequired or Failed
   User->>Web: Review, edit and confirm
@@ -394,7 +396,7 @@ Most recent verified results in this workspace:
 | Check                       | Result           |
 | --------------------------- | ---------------- |
 | `.NET build`                | Passed           |
-| `.NET tests`                | `223/223` passed |
+| `.NET tests`                | `251/251` passed |
 | Frontend tests              | `82/82` passed   |
 | Frontend ESLint + Prettier  | Passed           |
 | Frontend production build   | Passed           |
@@ -449,6 +451,7 @@ An Azure demo deployment should provision equivalent managed services or contain
 
 ## Known documentation gaps
 
-- MCP Inspector screenshot still needs to be captured from a real authenticated demo session.
+- Receipt extraction-review and full product-manual lifecycle screenshots still need final populated-state captures.
+- MCP Inspector still needs to be captured from a real authenticated demo session.
 - Azure infrastructure-as-code for the temporary portfolio deployment is not committed.
 - A short demo recording has not been produced yet.
