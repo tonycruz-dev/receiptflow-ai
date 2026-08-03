@@ -53,3 +53,4 @@ dotnet ef migrations has-pending-model-changes --project ReceiptFlow.Infrastruct
 - Include screenshots for UI changes.
 - Call out migrations, configuration changes and any provider interactions.
 - Keep portfolio claims accurate: do not claim CI, Azure deployment or production readiness unless verified.
+#test
